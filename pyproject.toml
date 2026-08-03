@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "misw4412-agente"
+version = "0.1.0"
+description = "Agente MISW4412 — CLI + LangGraph + MCP"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[project.scripts]
+agente = "cli.main:cli"
+
+[tool.setuptools]
+packages = ["cli", "agent", "agent.memory", "agent.reasoning", "mcp_server", "observability"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# `--strict-markers` evita que un marcador mal escrito pase inadvertido y deje
+# una semana entera sin verificar.
+addopts = "--strict-markers"
+markers = [
+    "semana1: ambiente, CLI y configuración",
+    "semana2: herramientas, grafo del agente y servidor MCP",
+    "semana3: observabilidad con LangSmith (requiere credenciales)",
+    "semana4: memoria de corto y largo plazo",
+    "semana5: descomposición de tareas (ReAct / Plan-and-Execute)",
+]

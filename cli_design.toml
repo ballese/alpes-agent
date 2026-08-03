@@ -1,0 +1,31 @@
+# ===================================================================
+#  Diseño del CLI — personalicen su proyecto editando este archivo.
+#  Todos los campos son opcionales; si se omiten se usan los valores
+#  por defecto.
+# ===================================================================
+
+[banner]
+# El título se dibuja como ASCII art (pyfiglet). Si es muy largo para el
+# ancho de la terminal, la línea se corta en varios bloques — prefieran
+# títulos cortos aquí y dejen el nombre completo en el subtítulo.
+title = "Centro Proyectos"
+subtitle = "Evaluacion de Convocatorias y Conformacion de Equipos · Uni Alpes"
+# Fuentes de pyfiglet más legibles en terminal: small, standard, slant,
+# big, block. Lista completa: python -c "import pyfiglet; print(pyfiglet.FigletFont.getFonts())"
+font = "small"
+
+[colors]
+primary = "bright_blue"
+accent  = "blue"
+agent   = "bright_cyan"
+error   = "red"
+warning = "yellow"
+dim     = "dim"
+
+[prompt]
+symbol = "equipo ❯ "
+
+[display]
+show_banner     = true
+show_tool_calls = true
+agent_title     = "analista"

@@ -1,0 +1,11 @@
+# Ejemplo de Modelfile (laboratorio 1) por si el equipo quiere un modelo
+# personalizado con parámetros o instrucciones de sistema fijas.
+#
+#   ollama create mi-agente -f ollama/Modelfile.example
+#
+FROM qwen2.5:3b
+
+PARAMETER temperature 0
+PARAMETER num_ctx 8192
+
+MESSAGE system Eres un asistente conversacional. Respondes siempre en español, de forma breve y profesional.

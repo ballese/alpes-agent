@@ -1,0 +1,56 @@
+# Semana 5 — Descomposición de tareas (entrega P2)
+#
+# Para activar este pipeline, cópielo sobre .github/workflows/entrega.yml:
+#
+#     cp .github/pipelines/semana5.yml .github/workflows/entrega.yml
+#
+# Dentro de .github/workflows/ debe haber SIEMPRE un solo archivo: el de la
+# semana en curso. Así cada push ejecuta una única verificación y el consumo
+# de GitHub Actions del curso se mantiene bajo control.
+
+name: Entrega — Semana 5
+
+on:
+  push:
+    branches: [main]
+    # Editar documentación no dispara el pipeline: ahorra minutos de Actions.
+    paths-ignore:
+      - "**.md"
+      - "wiki/**"
+      - "notebooks/**"
+      - ".github/pipelines/**"
+  # Permite relanzar la verificación desde la pestaña Actions, sin hacer un
+  # commit vacío solo para que corra.
+  workflow_dispatch:
+
+# Si llegan varios push seguidos, cancela la corrida anterior.
+concurrency:
+  group: entrega-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificacion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+        timeout-minutes: 3
+
+      - name: El archivo .env no está en el repositorio
+        run: |
+          if [ -f .env ]; then
+            echo "::error::.env contiene credenciales y no debe subirse al repositorio. Bórrelo y verifique que esté listado en .gitignore."
+            exit 1
+          fi
+
+      - name: Verificaciones de la semana 5 (incluye regresión de semanas 1, 2 y 4)
+        run: pytest -m "semana1 or semana2 or semana4 or semana5" -q

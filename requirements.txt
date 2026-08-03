@@ -1,0 +1,40 @@
+# Dependencias del proyecto — VERSIONES FIJAS.
+#
+# Están fijadas con `==` a propósito. Con rangos abiertos (`>=`), cualquier
+# publicación de un tercero cambia lo que se instala y puede romper el
+# pipeline de los 50 grupos a la vez, sin que nadie haya tocado su código.
+# Ya pasó: `mcp` 2.0.0 movió `RequestContext` y dejó a
+# `langchain-mcp-adapters` sin poder importarlo.
+#
+# Fijarlas también hace que el entorno local y el de GitHub Actions sean
+# idénticos, así que "en mi máquina funciona" deja de ser una posibilidad.
+#
+# Si necesitan una versión distinta, cámbienla aquí y verifiquen que
+# `pytest` pasa antes de hacer push.
+
+# ── Agente ──────────────────────────────────────────────────────────────
+langchain==1.3.11
+langchain-core==1.4.8
+langchain-ollama==1.1.0
+langgraph==1.2.8
+langgraph-checkpoint-sqlite==3.1.0
+
+# ── MCP ─────────────────────────────────────────────────────────────────
+# langchain-mcp-adapters 0.3.0 aún no es compatible con mcp 2.x.
+langchain-mcp-adapters==0.3.0
+mcp[cli]==1.28.1
+
+# ── Observabilidad (semana 3) ───────────────────────────────────────────
+langsmith==0.10.0
+
+# ── CLI ─────────────────────────────────────────────────────────────────
+click==8.4.2
+rich==15.0.0
+pyfiglet==1.0.4
+prompt_toolkit==3.0.52
+python-dotenv==1.2.2
+httpx==0.28.1
+
+# ── Pruebas ─────────────────────────────────────────────────────────────
+pytest==9.1.1
+pytest-asyncio==1.4.0
