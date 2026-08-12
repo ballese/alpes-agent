@@ -110,13 +110,24 @@ el `docker compose` de la API y actualice `API_BASE_URL` en consecuencia. El
 código del agente **nunca** debe llevar la URL escrita a mano: siempre se lee de
 la configuración (`get_settings().api_base_url`).
 
-> Además de la API por equipo, el curso ofrecerá un servicio central de **base de
-> conocimiento (RAG)** con información institucional pública. No lo despliega
-> cada equipo. Sus credenciales y URL son **las mismas para todo el curso**
-> (no las elige cada equipo, a diferencia del modelo de Ollama): el equipo
-> docente las compartirá cuando estén confirmadas, y solo entonces se completan
-> las variables `RAG_*` del `.env`. Mientras tanto pueden dejarlas vacías: ningún
-> pipeline de ninguna semana depende de ellas.
+> Además de la API por equipo, el curso ofrece un servicio central de **base
+> de conocimiento (RAG)** con información institucional pública. No lo
+> despliega cada equipo — corre de forma centralizada, y cada grupo tiene su
+> propia cuenta con cuota de consultas propia. Complete estas variables en su
+> `.env` (nunca en el código, y nunca suba el `.env` al repositorio):
+>
+> ```dotenv
+> RAG_BASE_URL=http://34.71.149.196:8000/api/v1
+> RAG_EMAIL=grupo47_centroproyectos@uniandes.edu.co
+> RAG_PASSWORD=centroproyectos178
+> RAG_COLLECTION=centro_proyectos
+> ```
+>
+> Estas credenciales son temporales (vigentes durante las primeras semanas
+> del curso); si dejan de funcionar más adelante, avise por Slack. El
+> detalle de cómo usar estos endpoints desde su agente (login, límites de
+> consulta, formato de las respuestas) está en
+> [GUIA_ENDPOINTS.md](./GUIA_ENDPOINTS.md).
 
 ---
 
