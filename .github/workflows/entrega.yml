@@ -1,14 +1,14 @@
-# Semana 1 — Ambiente y estructura
+# Semana 2 — Tools y MCP
 #
 # Para activar este pipeline, cópielo sobre .github/workflows/entrega.yml:
 #
-#     cp .github/pipelines/semana1.yml .github/workflows/entrega.yml
+#     cp .github/pipelines/semana2.yml .github/workflows/entrega.yml
 #
 # Dentro de .github/workflows/ debe haber SIEMPRE un solo archivo: el de la
 # semana en curso. Así cada push ejecuta una única verificación y el consumo
 # de GitHub Actions del curso se mantiene bajo control.
 
-name: Entrega — Semana 1
+name: Entrega — Semana 2
 
 on:
   push:
@@ -52,5 +52,5 @@ jobs:
             exit 1
           fi
 
-      - name: Verificaciones de la semana 1
-        run: pytest -m "semana1" -q
+      - name: Verificaciones de la semana 2 (incluye regresión de la semana 1)
+        run: pytest -m "semana1 or semana2" -q

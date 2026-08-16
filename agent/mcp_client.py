@@ -1,24 +1,37 @@
-"""[SEMANA 2 — PENDIENTE] Cliente MCP del agente (laboratorio 8).
+"""Cliente MCP del agente (laboratorio 8).
 
-El cliente MCP lanza SU servidor MCP (`mcp_server/server.py`) como subproceso
-(transporte stdio) y convierte las herramientas que expone en tools de LangChain,
-para que el agente las use igual que las locales.
+Lanza `mcp_server/server.py` como subproceso (transporte stdio) con el mismo
+intérprete que corre el agente (`sys.executable`, así funciona igual dentro
+de un venv que en CI) y convierte sus tools en tools de LangChain.
 
-Implementen `load_mcp_tools()` conectándose a su servidor. `load_mcp_tools_safe()`
-ya está lista: envuelve la anterior para que el CLI no se caiga si el servidor
-todavía no existe o no arranca (degrada a solo herramientas locales).
+No depende de que la API empresarial ni el RAG estén levantados: eso solo se
+necesita cuando el agente invoca una tool, no cuando el servidor arranca y
+anuncia su catálogo (`list_tools`), que es lo único que hace `load_mcp_tools`.
 """
+
+import sys
+from pathlib import Path
+
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+_SERVER_SCRIPT = Path(__file__).resolve().parent.parent / "mcp_server" / "server.py"
 
 
 async def load_mcp_tools() -> list:
     """Descubre y devuelve las herramientas expuestas por su servidor MCP.
 
-    Debe arrancar el servidor y listar sus tools, sin depender de que la API
-    empresarial esté levantada (semana 2: al menos 1 herramienta).
+    Arranca el servidor por stdio y lista sus tools (semana 2: al menos 1).
     """
-    raise NotImplementedError(
-        "Semana 2: conecte el cliente MCP a su servidor siguiendo el laboratorio 8."
+    client = MultiServerMCPClient(
+        {
+            "centro-proyectos": {
+                "transport": "stdio",
+                "command": sys.executable,
+                "args": [str(_SERVER_SCRIPT)],
+            }
+        }
     )
+    return await client.get_tools()
 
 
 async def load_mcp_tools_safe() -> tuple[list, str | None]:
