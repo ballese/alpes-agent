@@ -19,6 +19,7 @@ import httpx
 from langchain_core.tools import tool
 
 from cli.config import get_settings
+from observability.tracing import trazable
 
 
 def _centro_url(path: str) -> str:
@@ -26,6 +27,7 @@ def _centro_url(path: str) -> str:
 
 
 @tool
+@trazable(name="autenticarse_centro")
 def autenticarse_centro(numero_identificacion: str, clave: str) -> dict:
     """Autentica a un miembro del Centro de Proyectos con su cédula y su clave
     de 4 dígitos. Úsala ANTES de crear_solicitud o de consultar tools que
@@ -45,6 +47,7 @@ def autenticarse_centro(numero_identificacion: str, clave: str) -> dict:
 
 
 @tool
+@trazable(name="crear_solicitud")
 def crear_solicitud(
     convocatoria_id: str,
     solicitante_id: str,
@@ -76,6 +79,7 @@ def crear_solicitud(
 
 
 @tool
+@trazable(name="asignar_convocatoria")
 def asignar_convocatoria(
     convocatoria_id: str,
     directivo_id: str,
