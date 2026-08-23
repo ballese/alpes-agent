@@ -19,8 +19,8 @@ completan una pieza y las pruebas de esa semana pasan de rojo a verde.
 
 | Nombre completo | Correo |
 | :--- | :--- |
-|  |  |
-|  |  |
+|  Daniel Beltrán Penagos| d.beltran@uniandes.edu.co |
+| Sergio Ballesteros Suarez | sa.ballesteros@uniandes.edu.co |
 
 ---
 
