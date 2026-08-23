@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # 1. API Empresarial del curso (Imagen oficial del docente)
   api:
@@ -11,10 +9,7 @@ services:
 
   # 2. Agente del Grupo 47
   agente:
-    image: dbeltranandes/agente-centroproyectos:2026-20
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: saballesteros/agente-centroproyectos:2026-20
     container_name: agente-grupo47
     depends_on:
       - api
