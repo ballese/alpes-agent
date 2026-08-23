@@ -10,6 +10,7 @@ Comandos:
 
 import asyncio
 import json
+from uuid import uuid4
 from importlib.metadata import PackageNotFoundError, version as pkg_version
 
 import click
@@ -154,6 +155,7 @@ async def _chat(usar_mcp: bool):
         # Etiqueta cada turno en LangSmith (laboratorio 9): filtrable por caso/grupo y con
         # un run_name legible en la lista de trazas.
         run_config = {
+            "run_id": uuid4(),
             "run_name": f"chat:{settings.caso_negocio}:turno-{turno}",
             "tags": [settings.caso_negocio, f"grupo-{settings.grupo}"],
             "metadata": {"caso": settings.caso_negocio, "grupo": settings.grupo, "turno": turno},

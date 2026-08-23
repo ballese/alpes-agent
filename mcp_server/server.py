@@ -28,12 +28,14 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 from cli.config import get_settings
+from observability.tracing import trazable
 
 mcp = FastMCP("centro-proyectos-lectura")
 
 _rag_token: str | None = None
 
 
+@trazable(name="rag_login", run_type="tool", tags=["rag"])
 def _rag_login() -> str:
     global _rag_token
     if _rag_token is None:
@@ -48,6 +50,7 @@ def _rag_login() -> str:
     return _rag_token
 
 
+@trazable(name="rag_ask", run_type="retriever", tags=["rag"])
 def _rag_ask(pregunta: str) -> dict:
     settings = get_settings()
     resp = httpx.post(
@@ -64,6 +67,7 @@ def _rag_ask(pregunta: str) -> dict:
     return resp.json()
 
 
+@trazable(name="centro_get", run_type="tool", tags=["api-empresarial"])
 def _centro_get(path: str, token: str, params: dict | None = None) -> dict | list:
     settings = get_settings()
     resp = httpx.get(
@@ -104,6 +108,7 @@ def _perfil_resumido(persona: dict) -> dict:
 
 
 @mcp.tool()
+@trazable(name="buscar_convocatoria", run_type="tool", tags=["mcp", "rag"])
 def buscar_convocatoria(query: str, entidad: str | None = None) -> dict:
     """Busca convocatorias abiertas en la base de conocimiento pública (RAG),
     filtrando por tema o entidad. Información pública: no requiere
@@ -123,6 +128,7 @@ def buscar_convocatoria(query: str, entidad: str | None = None) -> dict:
 
 
 @mcp.tool()
+@trazable(name="leer_politicas_universidad", run_type="tool", tags=["mcp", "rag"])
 def leer_politicas_universidad(convocatoria_id: str) -> dict:
     """Recupera, desde la base de conocimiento pública (RAG), las políticas
     internas de participación (overhead mínimo, contrapartida, consorcios
@@ -144,6 +150,7 @@ def leer_politicas_universidad(convocatoria_id: str) -> dict:
 
 
 @mcp.tool()
+@trazable(name="consultar_mi_perfil", run_type="tool", tags=["mcp", "api-empresarial"])
 def consultar_mi_perfil(token: str) -> dict:
     """Devuelve el perfil de la PERSONA AUTENTICADA (cualquier rol):
     experticia, nivel, dedicación e historial. Es lo que usa un miembro del

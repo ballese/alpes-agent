@@ -1,0 +1,39 @@
+services:
+  # 1. API Empresarial del curso (Imagen oficial del docente)
+  api:
+    image: julianmora27/misw4412-api-empresarial:latest
+    container_name: api-empresarial-grupo47
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  # 2. Agente del Grupo 47
+  agente:
+    image: saballesteros/agente-centroproyectos:2026-20
+    container_name: agente-grupo47
+    depends_on:
+      - api
+    environment:
+      # Configuración del modelo y Ollama en el Host
+      - OLLAMA_MODEL=qwen2.5:3b
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # Conexión interna a la API dentro del compose
+      - API_BASE_URL=http://api:8080
+      - CASO_NEGOCIO=centro_proyectos
+      - GRUPO=47
+      # Credenciales del RAG
+      - RAG_BASE_URL=http://34.71.149.196:8000/api/v1
+      - RAG_EMAIL=grupo47_centroproyectos@uniandes.edu.co
+      - RAG_PASSWORD=centroproyectos178
+      - RAG_COLLECTION=centro_proyectos
+      # LangSmith: se lee desde .env, sin escribir la llave en el compose.
+      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+      - LANGSMITH_TRACING=${LANGCHAIN_TRACING_V2:-false}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGSMITH_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-misw4412-grupo47}
+      - LANGSMITH_PROJECT=${LANGCHAIN_PROJECT:-misw4412-grupo47}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    stdin_open: true
+    tty: true
