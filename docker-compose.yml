@@ -26,8 +26,13 @@ services:
       - RAG_EMAIL=grupo47_centroproyectos@uniandes.edu.co
       - RAG_PASSWORD=centroproyectos178
       - RAG_COLLECTION=centro_proyectos
-      # Desactivar trazado en evaluación ciega (el docente no requiere API key)
-      - LANGCHAIN_TRACING_V2=false
+      # LangSmith: se lee desde .env, sin escribir la llave en el compose.
+      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+      - LANGSMITH_TRACING=${LANGCHAIN_TRACING_V2:-false}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGSMITH_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-misw4412-grupo47}
+      - LANGSMITH_PROJECT=${LANGCHAIN_PROJECT:-misw4412-grupo47}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     stdin_open: true
