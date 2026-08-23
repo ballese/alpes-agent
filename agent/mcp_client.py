@@ -50,7 +50,7 @@ async def load_mcp_tools() -> list:
             }
         }
     )
-    return await client.get_tools()
+    return await client.get_tools(server_name="centro-proyectos")
 
 
 async def load_mcp_tools_safe() -> tuple[list, str | None]:
