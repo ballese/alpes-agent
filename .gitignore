@@ -8,3 +8,4 @@ __pycache__/
 checkpoints.sqlite
 *.sqlite3
 .langgraph_api/
+dev.md
