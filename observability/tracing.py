@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import inspect
 from functools import wraps
 from functools import lru_cache
 from typing import Any, Callable
@@ -96,13 +97,27 @@ def trazable(
             process_outputs=process_outputs or _limpiar,
         )(func)
 
-        @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def _extra(kwargs: dict) -> dict:
             extra = kwargs.pop("langsmith_extra", None) or {}
             metadata = {**extra.get("metadata", {}), "operation_id": str(uuid4())}
+            return {**extra, "metadata": metadata}
+
+        if inspect.iscoroutinefunction(func):
+            @wraps(func)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                return await traced(
+                    *args,
+                    langsmith_extra=_extra(kwargs),
+                    **kwargs,
+                )
+
+            return async_wrapper
+
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             return traced(
                 *args,
-                langsmith_extra={**extra, "metadata": metadata},
+                langsmith_extra=_extra(kwargs),
                 **kwargs,
             )
 
