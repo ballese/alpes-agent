@@ -19,7 +19,10 @@ from functools import lru_cache
 
 from dotenv import load_dotenv
 
+from observability.tracing import configurar_langsmith, langsmith_project, tracing_activo
+
 load_dotenv()
+configurar_langsmith()
 
 
 @dataclass(frozen=True)
@@ -40,14 +43,15 @@ class Settings:
 
 @lru_cache
 def get_settings() -> Settings:
+    configurar_langsmith()
     return Settings(
         ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5:3b"),
         ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         api_base_url=os.getenv("API_BASE_URL", "http://localhost:8080"),
         caso_negocio=os.getenv("CASO_NEGOCIO", "centro_proyectos"),
         grupo=os.getenv("GRUPO", "00"),
-        langsmith_tracing=os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true",
-        langsmith_project=os.getenv("LANGCHAIN_PROJECT", ""),
+        langsmith_tracing=tracing_activo(),
+        langsmith_project=langsmith_project(),
         rag_base_url=os.getenv("RAG_BASE_URL", ""),
         rag_email=os.getenv("RAG_EMAIL", ""),
         rag_password=os.getenv("RAG_PASSWORD", ""),
