@@ -26,8 +26,26 @@ def _centro_url(path: str) -> str:
     return f"{get_settings().api_base_url}/centro-proyectos{path}"
 
 
+def _respuesta(resp: httpx.Response) -> dict:
+    if resp.status_code >= 400:
+        return {"error": resp.json().get("detail", resp.text)}
+    return resp.json()
+
+
+def _perfil_resumido(persona: dict) -> dict:
+    return {
+        "id": persona["id"],
+        "nombre_completo": persona["nombre_completo"],
+        "rol": persona.get("rol"),
+        "seccion": persona.get("seccion"),
+        "areas_expertise": persona["areas_expertise"],
+        "nivel": persona["nivel"],
+        "dedicacion": persona["dedicacion"],
+    }
+
+
 @tool
-@trazable(name="autenticarse_centro")
+@trazable(name="autenticarse_centro", run_type="tool", tags=["api-empresarial"])
 def autenticarse_centro(numero_identificacion: str, clave: str) -> dict:
     """Autentica a un miembro del Centro de Proyectos con su cédula y su clave
     de 4 dígitos. Úsala ANTES de crear_solicitud o de consultar tools que
@@ -41,13 +59,11 @@ def autenticarse_centro(numero_identificacion: str, clave: str) -> dict:
         json={"numero_identificacion": numero_identificacion, "clave": clave},
         timeout=30,
     )
-    if resp.status_code != 200:
-        return {"error": resp.json().get("detail", resp.text)}
-    return resp.json()
+    return _respuesta(resp)
 
 
 @tool
-@trazable(name="crear_solicitud")
+@trazable(name="crear_solicitud", run_type="tool", tags=["api-empresarial"])
 def crear_solicitud(
     convocatoria_id: str,
     solicitante_id: str,
@@ -73,13 +89,11 @@ def crear_solicitud(
         },
         timeout=30,
     )
-    if resp.status_code not in (200, 201):
-        return {"error": resp.json().get("detail", resp.text)}
-    return resp.json()
+    return _respuesta(resp)
 
 
 @tool
-@trazable(name="asignar_convocatoria")
+@trazable(name="asignar_convocatoria", run_type="tool", tags=["api-empresarial"])
 def asignar_convocatoria(
     convocatoria_id: str,
     directivo_id: str,
@@ -111,12 +125,11 @@ def asignar_convocatoria(
         },
         timeout=30,
     )
-    if resp.status_code not in (200, 201):
-        return {"error": resp.json().get("detail", resp.text)}
-    return resp.json()
+    return _respuesta(resp)
 
 
 @tool
+@trazable(name="escalar", run_type="tool", tags=["api-empresarial"])
 def escalar(
     convocatoria_id: str,
     etapa_alcanzada: str,
@@ -146,11 +159,30 @@ def escalar(
         },
         timeout=30,
     )
-    if resp.status_code not in (200, 201):
-        return {"error": resp.json().get("detail", resp.text)}
-    return resp.json()
+    return _respuesta(resp)
+
+
+@tool
+@trazable(name="consultar_mi_perfil_local", run_type="tool", tags=["local", "api-empresarial"])
+def consultar_mi_perfil_local(token: str) -> dict:
+    """Equivalente local de la tool MCP consultar_mi_perfil para comparar latencia."""
+    resp = httpx.get(
+        _centro_url("/personal/me"),
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    resultado = _respuesta(resp)
+    if "error" in resultado:
+        return resultado
+    return _perfil_resumido(resultado)
 
 
 def get_local_tools() -> list:
     """Lista de herramientas locales del agente (semana 2: al menos 3)."""
-    return [autenticarse_centro, crear_solicitud, asignar_convocatoria, escalar]
+    return [
+        autenticarse_centro,
+        crear_solicitud,
+        asignar_convocatoria,
+        escalar,
+        consultar_mi_perfil_local,
+    ]
