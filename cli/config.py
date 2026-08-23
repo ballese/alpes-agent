@@ -19,7 +19,12 @@ from functools import lru_cache
 
 from dotenv import load_dotenv
 
-from observability.tracing import configurar_langsmith, langsmith_project, tracing_activo
+from observability.tracing import (
+    configurar_langsmith,
+    langsmith_project,
+    preparar_langsmith,
+    tracing_activo,
+)
 
 load_dotenv()
 configurar_langsmith()
@@ -44,6 +49,7 @@ class Settings:
 @lru_cache
 def get_settings() -> Settings:
     configurar_langsmith()
+    preparar_langsmith()
     return Settings(
         ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5:3b"),
         ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),

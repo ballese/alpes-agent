@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from functools import wraps
+from functools import lru_cache
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -44,6 +45,17 @@ def tracing_activo() -> bool:
     tracing = _env("LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING")
     api_key = _env("LANGCHAIN_API_KEY", "LANGSMITH_API_KEY")
     return _activo(tracing) and bool(api_key)
+
+
+@lru_cache(maxsize=1)
+def preparar_langsmith() -> None:
+    """Valida credenciales y crea el proyecto, igual que en el tutorial 9."""
+    if not tracing_activo() or not langsmith_project():
+        return
+
+    from langsmith import Client
+
+    Client().create_project(project_name=langsmith_project(), upsert=True)
 
 
 def _limpiar(value: Any) -> Any:
