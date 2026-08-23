@@ -1,0 +1,11 @@
+.env
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+*.egg-info
+checkpoints.sqlite
+*.sqlite3
+.langgraph_api
+dev.md

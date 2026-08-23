@@ -122,8 +122,8 @@ def build_graph(tools: list | None = None, checkpointer=None):
         process_inputs=_resumir_estado,
         process_outputs=_resumir_salida,
     )
-    def ejecutar_tools(state: AgentState, config=None) -> dict:
-        return tool_node.invoke(state, config=config)
+    async def ejecutar_tools(state: AgentState, config=None) -> dict:
+        return await tool_node.ainvoke(state, config=config)
 
     graph = StateGraph(AgentState)
     graph.add_node("agente", agente)
