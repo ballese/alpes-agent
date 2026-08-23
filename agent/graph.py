@@ -22,6 +22,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
 from cli.config import get_settings
+from observability.tracing import trazable
 
 
 class AgentState(TypedDict):
@@ -55,6 +56,7 @@ agent_prompt = ChatPromptTemplate.from_messages(
 )
 
 
+@trazable(name="nodo_decision", run_type="chain", tags=["langgraph"])
 def _debe_ejecutar_tools(state: AgentState) -> str:
     """Arista condicional: ¿el último mensaje del modelo pidió herramientas?
 
@@ -65,6 +67,20 @@ def _debe_ejecutar_tools(state: AgentState) -> str:
     if isinstance(ultimo, AIMessage) and ultimo.tool_calls:
         return "tools"
     return END
+
+
+def _resumir_estado(inputs: dict) -> dict:
+    state = inputs.get("state", {})
+    messages = state.get("messages", []) if isinstance(state, dict) else []
+    return {
+        "messages_total": len(messages),
+        "ultimo_tipo": messages[-1].__class__.__name__ if messages else None,
+    }
+
+
+def _resumir_salida(outputs: dict) -> dict:
+    messages = outputs.get("messages", []) if isinstance(outputs, dict) else []
+    return {"messages_total": len(messages)}
 
 
 def build_graph(tools: list | None = None, checkpointer=None):
@@ -86,14 +102,32 @@ def build_graph(tools: list | None = None, checkpointer=None):
         temperature=0,
     )
     agent_chain = agent_prompt | language_model.bind_tools(tools)
+    tool_node = ToolNode(tools)
 
+    @trazable(
+        name="nodo_agente",
+        run_type="chain",
+        tags=["langgraph", "agente"],
+        process_inputs=_resumir_estado,
+        process_outputs=_resumir_salida,
+    )
     def agente(state: AgentState) -> dict:
         respuesta = agent_chain.invoke({"messages": state["messages"]})
         return {"messages": [respuesta]}
 
+    @trazable(
+        name="nodo_tools",
+        run_type="chain",
+        tags=["langgraph", "tools"],
+        process_inputs=_resumir_estado,
+        process_outputs=_resumir_salida,
+    )
+    def ejecutar_tools(state: AgentState, config=None) -> dict:
+        return tool_node.invoke(state, config=config)
+
     graph = StateGraph(AgentState)
     graph.add_node("agente", agente)
-    graph.add_node("tools", ToolNode(tools))
+    graph.add_node("tools", ejecutar_tools)
 
     graph.add_edge(START, "agente")
     graph.add_conditional_edges("agente", _debe_ejecutar_tools, {"tools": "tools", END: END})
