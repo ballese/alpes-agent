@@ -1,10 +1,10 @@
 """Herramientas locales del agente (laboratorio 6) — Centro de Proyectos.
 
 Estas son las tools de ACCIÓN + autenticación: modifican el estado del
-negocio (crear_solicitud, asignar_convocatoria) o generan el token que las
-demás tools necesitan (autenticarse_centro). Las tools de SOLO LECTURA
-(convocatorias, políticas, personal, historial) viven en el servidor MCP
-(mcp_server/server.py), no aquí.
+negocio (crear_solicitud, asignar_convocatoria, escalar) o generan el token
+que las demás tools necesitan (autenticarse_centro). Las tools de SOLO
+LECTURA (convocatorias, políticas, personal, historial, solicitudes) viven
+en el servidor MCP (mcp_server/server.py), no aquí.
 
 El flujo de autenticación es el que ya expone la API empresarial (sección 4
 de su README): GET /personal/existe/{cedula} (sin token), luego
@@ -116,6 +116,41 @@ def asignar_convocatoria(
     return resp.json()
 
 
+@tool
+def escalar(
+    convocatoria_id: str,
+    etapa_alcanzada: str,
+    brechas: list[str],
+    preguntas_juicio_humano: list[str],
+) -> dict:
+    """Escala una convocatoria al equipo humano cuando se detecta un riesgo
+    reputacional, una brecha que el agente no puede resolver por sí mismo, o
+    un caso ambiguo que requiere juicio humano (cualquier rol la puede
+    invocar). NO crea solicitud ni asigna equipo: solo dice hasta dónde
+    llegó el análisis.
+
+    convocatoria_id:          convocatoria que dispara el escalamiento.
+    etapa_alcanzada:          hasta dónde llegó el análisis — uno de
+                               "escaneo_inicial", "contraste_requisitos",
+                               "conformacion_equipo".
+    brechas:                  brechas o riesgos específicos identificados.
+    preguntas_juicio_humano:  preguntas concretas que requieren decisión humana.
+    """
+    resp = httpx.post(
+        _centro_url("/escalamientos"),
+        json={
+            "convocatoria_id": convocatoria_id,
+            "etapa_alcanzada": etapa_alcanzada,
+            "brechas": brechas,
+            "preguntas_juicio_humano": preguntas_juicio_humano,
+        },
+        timeout=30,
+    )
+    if resp.status_code not in (200, 201):
+        return {"error": resp.json().get("detail", resp.text)}
+    return resp.json()
+
+
 def get_local_tools() -> list:
     """Lista de herramientas locales del agente (semana 2: al menos 3)."""
-    return [autenticarse_centro, crear_solicitud, asignar_convocatoria]
+    return [autenticarse_centro, crear_solicitud, asignar_convocatoria, escalar]

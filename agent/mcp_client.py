@@ -9,12 +9,29 @@ necesita cuando el agente invoca una tool, no cuando el servidor arranca y
 anuncia su catálogo (`list_tools`), que es lo único que hace `load_mcp_tools`.
 """
 
+import os
 import sys
 from pathlib import Path
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
-_SERVER_SCRIPT = Path(__file__).resolve().parent.parent / "mcp_server" / "server.py"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_SERVER_SCRIPT = _PROJECT_ROOT / "mcp_server" / "server.py"
+
+
+def _subprocess_env() -> dict[str, str]:
+    """PYTHONPATH explícito para el subproceso del servidor.
+
+    `python mcp_server/server.py` solo agrega a sys.path el directorio del
+    script (mcp_server/), no la raíz del repo — sin esto, `server.py` no
+    encuentra `cli.config`. Localmente no se nota porque `pip install -e .`
+    ya registra el proyecto como paquete global del venv, pero el pipeline
+    de CI solo instala requirements.txt.
+    """
+    raiz = str(_PROJECT_ROOT)
+    previo = os.environ.get("PYTHONPATH", "")
+    pythonpath = f"{raiz}{os.pathsep}{previo}" if previo else raiz
+    return {**os.environ, "PYTHONPATH": pythonpath}
 
 
 async def load_mcp_tools() -> list:
@@ -28,6 +45,8 @@ async def load_mcp_tools() -> list:
                 "transport": "stdio",
                 "command": sys.executable,
                 "args": [str(_SERVER_SCRIPT)],
+                "cwd": str(_PROJECT_ROOT),
+                "env": _subprocess_env(),
             }
         }
     )
