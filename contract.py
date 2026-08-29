@@ -100,13 +100,26 @@ def build_checkpointer():
       esta (falla con `no running event loop`). Use la versión síncrona: es la
       del laboratorio 11 y la que necesita el CLI.
     """
+    """from agent.memory.checkpointer import build_checkpointer as _impl
+
+    return _impl()
+
+
+def build_store():
+    ""Store de memoria de largo plazo (persiste ENTRE conversaciones).""
+    from agent.memory.store import build_store as _impl
+
+    return _impl()"""
+
+def build_checkpointer():
+    """Checkpointer de LangGraph con persistencia en disco (SqliteSaver)."""
     from agent.memory.checkpointer import build_checkpointer as _impl
 
     return _impl()
 
 
 def build_store():
-    """Store de memoria de largo plazo (persiste ENTRE conversaciones)."""
+    """Store de memoria de largo plazo (persiste entre conversaciones)."""
     from agent.memory.store import build_store as _impl
 
     return _impl()
