@@ -1,13 +1,26 @@
-"""[SEMANA 4 — PENDIENTE] Memoria de corto plazo con checkpointers (laboratorio 11).
+"""Memoria de corto plazo con checkpointer PostgreSQL."""
 
-El equipo debe implementar `build_checkpointer(backend)` retornando un
-checkpointer de LangGraph que persista en disco (SqliteSaver o superior),
-y conectar el CLI para que cada conversación use un `thread_id` propio.
-"""
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.postgres import PostgresSaver
+from psycopg import connect
+from psycopg.rows import dict_row
+
+from cli.config import get_settings
 
 
-def build_checkpointer(backend: str = "sqlite"):
-    """Retorna un BaseCheckpointSaver según el backend: memory | sqlite | postgres."""
-    raise NotImplementedError(
-        "Semana 4: implementar la memoria de corto plazo siguiendo el laboratorio 11."
-    )
+def build_checkpointer(backend: str = "postgres") -> BaseCheckpointSaver:
+    """Retorna un checkpointer síncrono listo para usar."""
+    if backend == "memory":
+        from langgraph.checkpoint.memory import MemorySaver
+
+        return MemorySaver()
+    if backend == "postgres":
+        conn = connect(
+            get_settings().database_url,
+            autocommit=True,
+            row_factory=dict_row,
+        )
+        saver = PostgresSaver(conn)
+        saver.setup()
+        return saver
+    raise ValueError(f"Backend no soportado: {backend}")

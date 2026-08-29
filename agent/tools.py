@@ -52,7 +52,9 @@ def autenticarse_centro(numero_identificacion: str, clave: str) -> dict:
     requieran token (consultar_perfil_personal, consultar_historial_participaciones).
     Retorna el bearer token y el rol (personal | directivo), que determina qué
     puede hacer el usuario (por ejemplo, solo un directivo puede asignar
-    convocatorias o listar a todo el personal).
+    convocatorias o listar a todo el personal). Si la respuesta trae el campo
+    "token", úselo directamente como argumento token en consultar_mi_perfil;
+    no se lo vuelva a pedir al usuario.
     """
     resp = httpx.post(
         _centro_url("/auth/login"),

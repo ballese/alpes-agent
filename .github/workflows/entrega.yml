@@ -1,19 +1,14 @@
-# Semana 3 — Observabilidad (entrega P1)
+# Semana 4 — Memoria
 #
 # Para activar este pipeline, cópielo sobre .github/workflows/entrega.yml:
 #
-#     cp .github/pipelines/semana3.yml .github/workflows/entrega.yml
+#     cp .github/pipelines/semana4.yml .github/workflows/entrega.yml
 #
 # Dentro de .github/workflows/ debe haber SIEMPRE un solo archivo: el de la
 # semana en curso. Así cada push ejecuta una única verificación y el consumo
 # de GitHub Actions del curso se mantiene bajo control.
-#
-# Esta semana necesita credenciales de LangSmith, configuradas en
-# Settings -> Secrets and variables -> Actions:
-#   - Secret   LANGCHAIN_API_KEY  = llave entregada por el equipo docente
-#   - Variable LANGCHAIN_PROJECT  = misw4412-grupoXY  (XY = número de su grupo)
 
-name: Entrega — Semana 3
+name: Entrega — Semana 4
 
 on:
   push:
@@ -36,7 +31,7 @@ concurrency:
 jobs:
   verificacion:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -57,13 +52,5 @@ jobs:
             exit 1
           fi
 
-      - name: Verificaciones de la semana 3 (incluye regresión de semanas anteriores)
-        run: pytest -m "semana1 or semana2 or semana3" -q
-        env:
-          LANGCHAIN_API_KEY: ${{ secrets.LANGCHAIN_API_KEY }}
-          LANGCHAIN_PROJECT: ${{ vars.LANGCHAIN_PROJECT }}
-          # El pipeline valida la credencial, pero NO envía trazas: ensuciaría
-          # el proyecto del grupo con corridas de CI. Las trazas del entregable
-          # las generan ustedes usando el agente.
-          LANGCHAIN_TRACING_V2: "false"
-
+      - name: Verificaciones de la semana 4 (incluye regresión de semanas 1 y 2)
+        run: pytest -m "semana1 or semana2 or semana4" -q
