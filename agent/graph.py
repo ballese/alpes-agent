@@ -1,13 +1,14 @@
-"""Grafo del agente (laboratorios 4 y 5) — Centro de Proyectos y Consultoría.
+"""Grafo del agente — Centro de Proyectos y Consultoría.
 
 Segunda etapa: agente con memoria persistente de dos capas y compresión de contexto.
-- Memoria de corto plazo: persistencia con SqliteSaver indexada por thread_id.
-- Memoria de largo plazo: persistencia con InMemoryStore indexada por namespaces ("profiles", user_id).
+- Memoria de corto plazo: checkpoints PostgreSQL indexados por thread_id.
+- Memoria de largo plazo: perfil único persistido en PostgreSQL.
 - Compresión de contexto: resumen progresivo de mensajes antiguos con RemoveMessage.
 """
 
 import asyncio
 import concurrent.futures
+import json
 from typing import Annotated, Any, Dict, List, Literal, TypedDict
 
 from langchain_core.messages import (
@@ -16,6 +17,7 @@ from langchain_core.messages import (
     HumanMessage,
     RemoveMessage,
     SystemMessage,
+    ToolMessage,
 )
 from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, StateGraph
@@ -24,7 +26,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.store.base import BaseStore
 
 from agent.memory.checkpointer import build_checkpointer
-from agent.memory.store import build_store
+from agent.memory.store import SINGLE_USER_ID, build_store, save_user_profile
 from cli.config import get_settings
 from observability.tracing import trazable
 
@@ -51,8 +53,10 @@ SYSTEM_PROMPT_BASE = (
     "Si el usuario pregunta por convocatorias, usa buscar_convocatoria con un query breve. "
     "Si ya tienes un id de convocatoria y necesita reglas internas, usa leer_politicas_universidad. "
     "Si el usuario entrega cédula y clave, invoca inmediatamente autenticarse_centro; "
-    "con el token resultante, usa consultar_mi_perfil cuando pida su perfil o cuando debas "
-    "validar rol, dedicación, experticia o riesgo. "
+    "cuando autenticarse_centro retorne el campo 'token', úsalo directamente como argumento "
+    "'token' de consultar_mi_perfil; nunca le pidas al usuario que repita ese token. "
+    "Usa consultar_mi_perfil cuando pida su perfil o cuando debas validar rol, dedicación, "
+    "experticia o riesgo. "
     "Si el usuario quiere postularse, primero consulta convocatoria, políticas y perfil; "
     "si no hay riesgo claro, usa crear_solicitud; si hay riesgo o ambigüedad importante, usa escalar. "
     "Si el usuario es directivo y pide asignar equipo, consulta la información necesaria y luego "
@@ -81,6 +85,57 @@ def _resumir_salida(outputs: dict) -> dict:
     return {"messages_total": len(messages)}
 
 
+def _json_o_none(texto: str) -> Any:
+    try:
+        return json.loads(texto)
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+
+def _contenido_tool(message: ToolMessage) -> Any:
+    content = message.content
+    if isinstance(content, list):
+        content = "\n".join(
+            item.get("text", "") for item in content if isinstance(item, dict)
+        )
+    if isinstance(content, str):
+        return _json_o_none(content) or content
+    return content
+
+
+def _recordar_perfil_desde_tools(outputs: dict, store: BaseStore) -> None:
+    for message in outputs.get("messages", []):
+        if not isinstance(message, ToolMessage):
+            continue
+        if message.name not in {"consultar_mi_perfil", "consultar_mi_perfil_local"}:
+            continue
+
+        perfil = _contenido_tool(message)
+        if not isinstance(perfil, dict) or "error" in perfil:
+            continue
+
+        areas = perfil.get("areas_expertise", [])
+        areas_txt = ", ".join(areas) if isinstance(areas, list) else str(areas)
+        save_user_profile(
+            store,
+            SINGLE_USER_ID,
+            {
+                "persona_id": perfil.get("id"),
+                "nombre_completo": perfil.get("nombre_completo"),
+                "rol": perfil.get("rol"),
+                "seccion": perfil.get("seccion"),
+                "areas_expertise": areas,
+                "nivel": perfil.get("nivel"),
+                "dedicacion": perfil.get("dedicacion"),
+                "riesgo": perfil.get("riesgo"),
+                "continuidad": (
+                    f"El usuario autenticado es {perfil.get('nombre_completo')} "
+                    f"con rol {perfil.get('rol')} y experticia en {areas_txt}."
+                ),
+            },
+        )
+
+
 def _asegurar_tool_sincrona(tool):
     """Permite que herramientas asíncronas (como las de FastMCP) se invoquen en ToolNode síncrono."""
     if getattr(tool, "func", None) is None and getattr(tool, "coroutine", None) is not None:
@@ -95,28 +150,37 @@ def _asegurar_tool_sincrona(tool):
 
 
 def profile_loader(state: AgentState, store: BaseStore) -> Dict[str, Any]:
-    """Carga el perfil de largo plazo del investigador desde el Store."""
-    user_id = state.get("user_id", "default_user")
-    item = store.get(("profiles", user_id), "profile")
+    """Carga el perfil único de largo plazo desde el Store."""
+    item = store.get(("profiles", SINGLE_USER_ID), "profile")
     if not item:
         return {"profile": ""}
     perfil = item.value
+    areas = perfil.get("areas_expertise") or perfil.get("area") or "No especificada"
+    if isinstance(areas, list):
+        areas = ", ".join(areas)
     resumen = (
-        f"Nombre: {perfil.get('nombre', user_id)}. "
-        f"Área: {perfil.get('area', 'No especificada')}. "
-        f"Preferencias: {perfil.get('preferencias', '')}."
+        f"Nombre: {perfil.get('nombre_completo') or perfil.get('nombre') or SINGLE_USER_ID}. "
+        f"Rol: {perfil.get('rol', 'No especificado')}. "
+        f"Área: {areas}. "
+        f"Preferencias: {perfil.get('preferencias', '')}. "
+        f"Continuidad: {perfil.get('continuidad', '')}."
     )
     return {"profile": resumen}
 
 
 def profile_updater(state: AgentState, store: BaseStore) -> Dict[str, Any]:
-    """Extrae hechos permanentes del mensaje del usuario y actualiza el Store."""
-    user_id = state.get("user_id", "default_user")
+    """Extrae hechos permanentes del mensaje y actualiza el perfil único."""
     human_msgs = [m for m in state.get("messages", []) if isinstance(m, HumanMessage)]
     if not human_msgs:
         return {}
 
     last_msg = human_msgs[-1].content
+    recientes = state.get("messages", [])[-6:]
+    contexto = "\n".join(
+        f"{msg.__class__.__name__}: {getattr(msg, 'content', '')}"
+        for msg in recientes
+        if getattr(msg, "content", "")
+    )
     settings = get_settings()
     llm_extractor = ChatOllama(
         model=settings.ollama_model,
@@ -124,10 +188,13 @@ def profile_updater(state: AgentState, store: BaseStore) -> Dict[str, Any]:
         temperature=0,
     )
     prompt = (
-        "Extrae únicamente hechos permanentes sobre el perfil del investigador (nombre, rol, "
-        f"área temática, intereses de proyectos) del mensaje: '{last_msg}'. "
-        "Si no hay datos personales relevantes para su perfil a largo plazo, responde exactamente: 'NADA'. "
-        "Si hay datos, escribe una frase breve y directa."
+        "Extrae memoria útil para continuar futuras conversaciones del mismo usuario. "
+        "Incluye solo hechos estables o contexto de negocio vigente: rol, intereses, "
+        "convocatoria en evaluación, restricciones relevantes o siguiente paso pendiente. "
+        f"Último mensaje humano: '{last_msg}'.\n"
+        f"Contexto reciente:\n{contexto}\n"
+        "Si no hay nada útil para recordar, responde exactamente: 'NADA'. "
+        "Si hay datos, escribe una sola frase breve."
     )
     extraccion = llm_extractor.invoke([HumanMessage(content=prompt)])
     fact = extraccion.content.strip()
@@ -135,12 +202,13 @@ def profile_updater(state: AgentState, store: BaseStore) -> Dict[str, Any]:
     if "NADA" in fact or not fact:
         return {}
 
-    namespace = ("profiles", user_id)
-    existente = store.get(namespace, "profile")
+    existente = store.get(("profiles", SINGLE_USER_ID), "profile")
     data = existente.value if existente else {}
-    pref_actual = data.get("preferencias", "")
-    data["preferencias"] = f"{pref_actual} {fact}".strip() if pref_actual else fact
-    store.put(namespace, "profile", data)
+    continuidad_actual = data.get("continuidad", "")
+    data["continuidad"] = (
+        f"{continuidad_actual} {fact}".strip() if continuidad_actual else fact
+    )
+    save_user_profile(store, SINGLE_USER_ID, data)
     return {}
 
 
@@ -243,8 +311,10 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
         process_inputs=_resumir_estado,
         process_outputs=_resumir_salida,
     )
-    def ejecutar_tools(state: AgentState, config=None) -> dict:
-        return tool_node.invoke(state, config=config)
+    def ejecutar_tools(state: AgentState, store: BaseStore, config=None) -> dict:
+        outputs = tool_node.invoke(state, config=config)
+        _recordar_perfil_desde_tools(outputs, store)
+        return outputs
 
     graph = StateGraph(AgentState)
     graph.add_node("profile_loader", profile_loader)
