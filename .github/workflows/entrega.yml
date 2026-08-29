@@ -32,6 +32,23 @@ jobs:
   verificacion:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: agente
+          POSTGRES_USER: agente
+          POSTGRES_PASSWORD: agente
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agente -d agente"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://agente:agente@localhost:5432/agente?sslmode=disable
+      LANGGRAPH_STRICT_MSGPACK: "true"
     steps:
       - uses: actions/checkout@v4
 
