@@ -115,21 +115,30 @@ async def _chat(usar_mcp: bool):
     from prompt_toolkit.patch_stdout import patch_stdout
 
     from agent.graph import build_graph
+    from agent.memory.checkpointer import build_checkpointer
+    from agent.memory.store import build_store
 
     settings = get_settings()
     ui.banner(settings)
 
     tools = await _reunir_tools(usar_mcp)
+    checkpointer = build_checkpointer()
+    store = build_store()
+
     try:
-        graph = build_graph(tools=tools)
+        graph = build_graph(tools=tools, checkpointer=checkpointer, store=store)
     except NotImplementedError:
         ui.error("El agente todavía no está implementado.")
-        ui.aviso("Implemente build_graph en agent/graph.py (semana 2) y vuelva a intentarlo.")
+        ui.aviso("Implemente build_graph en agent/graph.py y vuelva a intentarlo.")
         return
 
-    historia: list = []
+    session_id = str(uuid4())[:8]
+    thread_id = f"centro-{session_id}"
+    user_id = "investigador_centro"
     turno = 0
     session = PromptSession()
+
+    ui.aviso(f"Sesión iniciada | Thread ID: {thread_id} | Usuario: {user_id}")
 
     while True:
         try:
@@ -143,30 +152,44 @@ async def _chat(usar_mcp: bool):
         if texto in ("/salir", "/exit"):
             break
         if texto == "/nueva":
-            historia = []
-            ui.aviso("Conversación reiniciada.")
+            session_id = str(uuid4())[:8]
+            thread_id = f"centro-{session_id}"
+            turno = 0
+            ui.aviso(f"Nueva sesión iniciada | Nuevo Thread ID: {thread_id} (Memoria de largo plazo conservada).")
             continue
         if texto == "/ayuda":
-            ui.console.print("[dim]/nueva reinicia la conversación · /salir termina[/dim]")
+            ui.console.print("[dim]/nueva reinicia la sesión (nuevo thread_id) · /salir termina[/dim]")
             continue
 
-        historia.append(HumanMessage(content=texto))
         turno += 1
-        # Etiqueta cada turno en LangSmith (laboratorio 9): filtrable por caso/grupo y con
-        # un run_name legible en la lista de trazas.
+        # Configuración con thread_id requerido por el checkpointer y etiquetas de LangSmith
         run_config = {
+            "configurable": {"thread_id": thread_id},
             "run_id": uuid4(),
             "run_name": f"chat:{settings.caso_negocio}:turno-{turno}",
             "tags": [settings.caso_negocio, f"grupo-{settings.grupo}"],
-            "metadata": {"caso": settings.caso_negocio, "grupo": settings.grupo, "turno": turno},
+            "metadata": {
+                "caso": settings.caso_negocio,
+                "grupo": settings.grupo,
+                "turno": turno,
+                "user_id": user_id,
+            },
         }
+
         try:
-            async for update in graph.astream(
-                {"messages": historia}, config=run_config, stream_mode="updates"
+            input_state = {
+                "messages": [HumanMessage(content=texto)],
+                "user_id": user_id,
+            }
+            for update in graph.stream(
+                input_state, config=run_config, stream_mode="updates"
             ):
+                if not isinstance(update, dict):
+                    continue
                 for salida_nodo in update.values():
+                    if not isinstance(salida_nodo, dict):
+                        continue
                     for mensaje in salida_nodo.get("messages", []):
-                        historia.append(mensaje)
                         if isinstance(mensaje, AIMessage) and mensaje.tool_calls:
                             for llamada in mensaje.tool_calls:
                                 ui.tool_llamada(llamada["name"], llamada["args"])
@@ -174,13 +197,12 @@ async def _chat(usar_mcp: bool):
                             ui.tool_resultado(mensaje.name, str(mensaje.content))
                         elif isinstance(mensaje, AIMessage) and mensaje.content:
                             ui.respuesta_agente(mensaje.content)
-        except Exception as exc:  # noqa: BLE001 — el REPL no debe morir por un turno fallido
+        except Exception as exc:  # noqa: BLE001
             ui.error(f"Fallo al invocar el agente: {exc}")
             ui.aviso(
                 f"Verifique que Ollama está corriendo ({settings.ollama_base_url}) y que el "
                 f"modelo está descargado: ollama pull {settings.ollama_model}"
             )
-            historia.pop()
 
     ui.console.print("[dim]Hasta pronto.[/dim]")
 
