@@ -41,6 +41,7 @@ def config():
     click.echo(f"modelo Ollama    : {settings.ollama_model}")
     click.echo(f"Ollama URL       : {settings.ollama_base_url}")
     click.echo(f"API empresarial  : {settings.api_base_url}")
+    click.echo(f"Base de memoria  : {settings.database_url}")
     click.echo(f"RAG (conocimiento): {settings.rag_base_url} · colección {settings.rag_collection}")
     click.echo(f"caso de negocio  : {settings.caso_negocio}")
     click.echo(f"grupo            : {settings.grupo}")
@@ -116,7 +117,7 @@ async def _chat(usar_mcp: bool):
 
     from agent.graph import build_graph
     from agent.memory.checkpointer import build_checkpointer
-    from agent.memory.store import build_store
+    from agent.memory.store import SINGLE_USER_ID, build_store
 
     settings = get_settings()
     ui.banner(settings)
@@ -134,7 +135,7 @@ async def _chat(usar_mcp: bool):
 
     session_id = str(uuid4())[:8]
     thread_id = f"centro-{session_id}"
-    user_id = "investigador_centro"
+    user_id = SINGLE_USER_ID
     turno = 0
     session = PromptSession()
 
