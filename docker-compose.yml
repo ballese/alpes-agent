@@ -1,4 +1,21 @@
 services:
+  # 0. Base de datos para memoria de LangGraph
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres-agente-grupo47
+    environment:
+      - POSTGRES_DB=agente
+      - POSTGRES_USER=agente
+      - POSTGRES_PASSWORD=agente
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agente -d agente"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - agente-postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+
   # 1. API Empresarial del curso (Imagen oficial del docente)
   api:
     image: julianmora27/misw4412-api-empresarial:latest
@@ -9,16 +26,21 @@ services:
 
   # 2. Agente del Grupo 47
   agente:
-    image: saballesteros/agente-centroproyectos:2026-20
+    image: saballesteros/agente-centroproyectos:MISW44-grupo37-entrega3.2
     container_name: agente-grupo47
     depends_on:
-      - api
+      api:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     environment:
       # Configuración del modelo y Ollama en el Host
       - OLLAMA_MODEL=qwen2.5:3b
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       # Conexión interna a la API dentro del compose
       - API_BASE_URL=http://api:8080
+      - DATABASE_URL=postgresql://agente:agente@postgres:5432/agente?sslmode=disable
+      - LANGGRAPH_STRICT_MSGPACK=true
       - CASO_NEGOCIO=centro_proyectos
       - GRUPO=47
       # Credenciales del RAG
@@ -37,3 +59,6 @@ services:
       - "host.docker.internal:host-gateway"
     stdin_open: true
     tty: true
+
+volumes:
+  agente-postgres:
