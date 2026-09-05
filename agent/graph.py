@@ -25,8 +25,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.store.base import BaseStore
 
-from agent.memory.checkpointer import build_checkpointer
-from agent.memory.store import SINGLE_USER_ID, build_store, save_user_profile
+from agent.memory.store import SINGLE_USER_ID, save_user_profile
 from cli.config import get_settings
 from observability.tracing import trazable
 
@@ -340,7 +339,8 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
     )
     graph.add_edge("summarize", END)
 
-    saver = checkpointer if checkpointer is not None else build_checkpointer()
-    store_inst = store if store is not None else build_store()
-
-    return graph.compile(checkpointer=saver, store=store_inst)
+    # `checkpointer` y `store` los inyecta quien construye el grafo: el CLI pasa
+    # los de PostgreSQL (memoria real). Si llegan como None el grafo compila
+    # igual, sin memoria persistente, tal como documenta contract.py. Así las
+    # pruebas de forma (semana 2) no necesitan una base de datos levantada.
+    return graph.compile(checkpointer=checkpointer, store=store)
