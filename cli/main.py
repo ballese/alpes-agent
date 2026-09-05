@@ -208,5 +208,64 @@ async def _chat(usar_mcp: bool):
     ui.console.print("[dim]Hasta pronto.[/dim]")
 
 
+@cli.command()
+@click.argument("mensaje")
+@click.option("--sin-mcp", is_flag=True, help="Solo tools locales (sin el servidor MCP).")
+@click.option("--max-iteraciones", default=6, show_default=True,
+              help="Red de seguridad del bucle ReAct (semana 5).")
+def razonar(mensaje: str, sin_mcp: bool, max_iteraciones: int):
+    """Ejecuta el grafo ReAct de la semana 5 sobre un mensaje y muestra la traza razonar↔actuar.
+
+    A diferencia de `chat` (que usa el grafo de memoria de la semana 2/4), este
+    comando invoca `build_reasoning_graph` con TODAS las tools (locales + MCP) y
+    imprime cada paso del ciclo y el nº de iteraciones consumidas.
+
+    Ejemplo: agente razonar "Mi cédula es 1020340003 y mi clave es 0003, muéstrame convocatorias para mi perfil"
+    """
+    asyncio.run(_razonar(mensaje, usar_mcp=not sin_mcp, max_iteraciones=max_iteraciones))
+
+
+async def _razonar(mensaje: str, usar_mcp: bool, max_iteraciones: int):
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+    from agent.reasoning.react import build_reasoning_graph
+
+    settings = get_settings()
+    tools = await _reunir_tools(usar_mcp)
+    ui.aviso(f"Tools disponibles: {', '.join(t.name for t in tools) or '(ninguna)'}")
+
+    grafo = build_reasoning_graph(tools=tools, max_iterations=max_iteraciones)
+    entrada = {"messages": [HumanMessage(content=mensaje)], "iterations": 0}
+    config = {
+        "configurable": {"thread_id": f"razonar-{uuid4().hex[:8]}"},
+        "recursion_limit": 2 * max_iteraciones + 4,
+    }
+
+    iteraciones = 0
+    try:
+        for update in grafo.stream(entrada, config=config, stream_mode="updates"):
+            for _nodo, salida in update.items():
+                salida = salida or {}
+                if "iterations" in salida:
+                    iteraciones = salida["iterations"]
+                for msg in salida.get("messages", []):
+                    if isinstance(msg, AIMessage) and msg.tool_calls:
+                        for llamada in msg.tool_calls:
+                            ui.tool_llamada(llamada["name"], llamada["args"])
+                    elif isinstance(msg, ToolMessage):
+                        ui.tool_resultado(msg.name, str(msg.content))
+                    elif isinstance(msg, AIMessage) and msg.content:
+                        ui.respuesta_agente(msg.content)
+    except Exception as exc:  # noqa: BLE001
+        ui.error(f"Fallo en el grafo de razonamiento: {exc}")
+        ui.aviso(
+            f"Verifique que Ollama está corriendo ({settings.ollama_base_url}) y que "
+            f"el modelo está descargado: ollama pull {settings.ollama_model}"
+        )
+        return
+
+    ui.aviso(f"Iteraciones ReAct: {iteraciones} / {max_iteraciones}")
+
+
 if __name__ == "__main__":
     cli()
