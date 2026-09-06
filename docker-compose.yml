@@ -3,6 +3,8 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: postgres-agente-grupo47
+    # No volcar logs a la terminal en `docker compose up`: deja limpio el chat.
+    attach: false
     environment:
       - POSTGRES_DB=agente
       - POSTGRES_USER=agente
@@ -20,6 +22,8 @@ services:
   api:
     image: julianmora27/misw4412-api-empresarial:latest
     container_name: api-empresarial-grupo47
+    # Igual que postgres: sin logs en la terminal para no ensuciar el chat.
+    attach: false
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -28,6 +32,8 @@ services:
   agente:
     build: .
     image: saballesteros/agente-centroproyectos:MISW44-grupo37-entrega5.0
+    # Construir siempre desde el codigo actual con `docker compose up` (sin --build).
+    pull_policy: build
     container_name: agente-grupo47
     depends_on:
       api:
