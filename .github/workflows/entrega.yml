@@ -1,14 +1,14 @@
-# Semana 4 — Memoria
+# Semana 5 — Descomposición de tareas (entrega P2)
 #
 # Para activar este pipeline, cópielo sobre .github/workflows/entrega.yml:
 #
-#     cp .github/pipelines/semana4.yml .github/workflows/entrega.yml
+#     cp .github/pipelines/semana5.yml .github/workflows/entrega.yml
 #
 # Dentro de .github/workflows/ debe haber SIEMPRE un solo archivo: el de la
 # semana en curso. Así cada push ejecuta una única verificación y el consumo
 # de GitHub Actions del curso se mantiene bajo control.
 
-name: Entrega — Semana 4
+name: Entrega — Semana 5
 
 on:
   push:
@@ -69,5 +69,5 @@ jobs:
             exit 1
           fi
 
-      - name: Verificaciones de la semana 4 (incluye regresión de semanas 1 y 2)
-        run: pytest -m "semana1 or semana2 or semana4" -q
+      - name: Verificaciones de la semana 5 (incluye regresión de semanas 1, 2 y 4)
+        run: pytest -m "semana1 or semana2 or semana4 or semana5" -q
