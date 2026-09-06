@@ -26,6 +26,7 @@ services:
 
   # 2. Agente del Grupo 47
   agente:
+    build: .
     image: saballesteros/agente-centroproyectos:MISW44-grupo37-entrega3.2
     container_name: agente-grupo47
     depends_on:

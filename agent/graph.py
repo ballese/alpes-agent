@@ -25,8 +25,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.store.base import BaseStore
 
-from agent.memory.checkpointer import build_checkpointer
-from agent.memory.store import SINGLE_USER_ID, build_store, save_user_profile
+from agent.memory.store import SINGLE_USER_ID, save_user_profile
 from cli.config import get_settings
 from observability.tracing import trazable
 
@@ -61,7 +60,16 @@ SYSTEM_PROMPT_BASE = (
     "si no hay riesgo claro, usa crear_solicitud; si hay riesgo o ambigüedad importante, usa escalar. "
     "Si el usuario es directivo y pide asignar equipo, consulta la información necesaria y luego "
     "usa asignar_convocatoria. "
-    "Si la pregunta está fuera del dominio del Centro de Proyectos, responde brevemente sin tools."
+    "Si la pregunta está fuera del dominio del Centro de Proyectos, responde brevemente sin tools.\n\n"
+    "REGLAS DE OPERACIÓN MULTI-PASO (OBLIGATORIAS):\n"
+    "- Resuelve las solicitudes encadenando de forma autónoma todas las herramientas necesarias "
+    "una tras otra, sin detenerte a pedir confirmación ni permiso al usuario entre pasos.\n"
+    "- Si autenticarse_centro ya retornó un 'token', el usuario YA ESTÁ AUTENTICADO. "
+    "Usa ese token inmediatamente en consultar_mi_perfil.\n"
+    "- Tras ejecutar consultar_mi_perfil, extrae los temas de 'areas_expertise' e invoca "
+    "INMEDIATAMENTE buscar_convocatoria(query=<esos temas de experticia>) en el mismo turno.\n"
+    "- Solo responde con texto al usuario cuando buscar_convocatoria haya retornado los resultados, "
+    "presentando un resumen claro de las convocatorias que encajan con su perfil."
 )
 
 
@@ -340,7 +348,8 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
     )
     graph.add_edge("summarize", END)
 
-    saver = checkpointer if checkpointer is not None else build_checkpointer()
-    store_inst = store if store is not None else build_store()
-
-    return graph.compile(checkpointer=saver, store=store_inst)
+    # `checkpointer` y `store` los inyecta quien construye el grafo: el CLI pasa
+    # los de PostgreSQL (memoria real). Si llegan como None el grafo compila
+    # igual, sin memoria persistente, tal como documenta contract.py. Así las
+    # pruebas de forma (semana 2) no necesitan una base de datos levantada.
+    return graph.compile(checkpointer=checkpointer, store=store)
