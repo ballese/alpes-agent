@@ -211,7 +211,7 @@ async def _chat(usar_mcp: bool):
 @cli.command()
 @click.argument("mensaje")
 @click.option("--sin-mcp", is_flag=True, help="Solo tools locales (sin el servidor MCP).")
-@click.option("--max-iteraciones", default=6, show_default=True,
+@click.option("--max-iteraciones", default=8, show_default=True,
               help="Red de seguridad del bucle ReAct (semana 5).")
 def razonar(mensaje: str, sin_mcp: bool, max_iteraciones: int):
     """Ejecuta el grafo ReAct de la semana 5 sobre un mensaje y muestra la traza razonar↔actuar.
@@ -235,19 +235,27 @@ async def _razonar(mensaje: str, usar_mcp: bool, max_iteraciones: int):
     ui.aviso(f"Tools disponibles: {', '.join(t.name for t in tools) or '(ninguna)'}")
 
     grafo = build_reasoning_graph(tools=tools, max_iterations=max_iteraciones)
-    entrada = {"messages": [HumanMessage(content=mensaje)], "iterations": 0}
+    entrada = {
+        "messages": [HumanMessage(content=mensaje)],
+        "reasoning_trace": [],
+        "iterations": 0,
+        "max_iterations": max_iteraciones,
+    }
     config = {
         "configurable": {"thread_id": f"razonar-{uuid4().hex[:8]}"},
         "recursion_limit": 2 * max_iteraciones + 4,
     }
 
     iteraciones = 0
+    traza: list[str] = []
     try:
         for update in grafo.stream(entrada, config=config, stream_mode="updates"):
             for _nodo, salida in update.items():
                 salida = salida or {}
                 if "iterations" in salida:
                     iteraciones = salida["iterations"]
+                if salida.get("reasoning_trace"):
+                    traza.extend(salida["reasoning_trace"])
                 for msg in salida.get("messages", []):
                     if isinstance(msg, AIMessage) and msg.tool_calls:
                         for llamada in msg.tool_calls:
@@ -255,7 +263,11 @@ async def _razonar(mensaje: str, usar_mcp: bool, max_iteraciones: int):
                     elif isinstance(msg, ToolMessage):
                         ui.tool_resultado(msg.name, str(msg.content))
                     elif isinstance(msg, AIMessage) and msg.content:
-                        ui.respuesta_agente(msg.content)
+                        contenido = msg.content if isinstance(msg.content, str) else str(msg.content)
+                        if "Respuesta final" in contenido:
+                            ui.respuesta_agente(contenido)
+                        else:  # pensamiento intermedio del ciclo ReAct
+                            ui.console.print(f"[dim]💭 {contenido.strip()}[/dim]")
     except Exception as exc:  # noqa: BLE001
         ui.error(f"Fallo en el grafo de razonamiento: {exc}")
         ui.aviso(
@@ -264,6 +276,10 @@ async def _razonar(mensaje: str, usar_mcp: bool, max_iteraciones: int):
         )
         return
 
+    if traza:
+        ui.console.print("\n[dim]── Traza de razonamiento (ReAct) ──[/dim]")
+        for linea in traza:
+            ui.console.print(f"[dim]{linea}[/dim]")
     ui.aviso(f"Iteraciones ReAct: {iteraciones} / {max_iteraciones}")
 
 
