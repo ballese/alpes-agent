@@ -31,7 +31,7 @@ services:
   # 2. Agente del Grupo 47
   agente:
     build: .
-    image: saballesteros/agente-centroproyectos-misw44-grupo37-entrega:2026-20
+    image: saballesteros/agente-centroproyectos-misw44-grupo47-entrega:2026-20
     # Construir siempre desde el codigo actual con `docker compose up` (sin --build).
     pull_policy: build
     container_name: agente-grupo47
