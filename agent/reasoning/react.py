@@ -44,8 +44,8 @@ from observability.tracing import trazable
 
 # Red de seguridad: nº máximo de pasos de razonamiento antes de forzar el cierre.
 # Una petición completa (autenticar → perfil → convocatorias → políticas →
-# respuesta) consume ~5-6 pasos; 8 deja aire sin permitir ciclos largos.
-MAX_ITERATIONS = 8
+# respuesta) consume ~5-6 pasos; 6 deja aire sin permitir ciclos largos.
+MAX_ITERATIONS = 6
 
 # El system prompt es la superficie de ingeniería más importante del patrón:
 # obliga a un "Pensamiento:" antes de cada acción y a elegir entre LLAMAR una
