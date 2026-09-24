@@ -42,6 +42,8 @@ services:
       # Ollama en el host, para el LLM refine del CRV write-gate.
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL_REFINE=llama3.2:1b
+      # Nivel de logs del juez (INFO muestra cada mensaje A2A y su veredicto).
+      - JUDGE_LOG_LEVEL=${JUDGE_LOG_LEVEL:-INFO}
       # LangSmith: mismo proyecto que el agente para correlacionar spans CRV
       # cliente (crv_gate) y servidor (crv_gate.pipeline / crv_gate.refine).
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}

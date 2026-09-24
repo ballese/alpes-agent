@@ -24,6 +24,8 @@ rubrica de salida sin abrir dos surfaces distintas.
 from __future__ import annotations
 
 import json
+import logging
+import os
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -33,7 +35,22 @@ from pydantic import BaseModel, Field
 
 from judge import audit, rubric
 
+# Sin esto los loggers ``judge.*`` no tienen handler y sus INFO se pierden;
+# asi ``docker compose logs -f judge`` muestra lo que el juez procesa.
+logging.basicConfig(
+    level=os.getenv("JUDGE_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s | %(message)s",
+)
+_LOG = logging.getLogger("judge.app")
+
+_LOG_TEXT_MAX_LEN = 300
+
 app = FastAPI(title="Judge Agent", version="0.3.0-a2a")
+
+
+def _trunc(text: str, max_len: int = _LOG_TEXT_MAX_LEN) -> str:
+    """Recorta ``text`` para que los logs no vuelquen mensajes enormes."""
+    return text if len(text) <= max_len else text[:max_len] + "..."
 
 
 # ---------------------------------------------------------------------------
@@ -239,10 +256,24 @@ async def jsonrpc_endpoint(request: Request) -> Any:
                 if kind == "critique"
                 else audit.validate(audit_payload)
             )
+            _LOG.info(
+                "A2A %s tool=%s args=%s -> %s",
+                kind,
+                audit_payload.get("tool"),
+                _trunc(json.dumps(audit_payload.get("args"), ensure_ascii=False)),
+                reply_text,
+            )
         else:
             # Rubrica de prompt-injection sobre la respuesta final del agente.
             verdict = rubric.evaluate(text_in)
             reply_text = json.dumps(verdict, ensure_ascii=False)
+            # Sin evidencia: podria contener un secreto detectado por R3.
+            _LOG.info(
+                "A2A rubric text=%r -> %s score=%s",
+                _trunc(text_in),
+                verdict["verdict"],
+                verdict["score"],
+            )
 
         return _rpc_result(rpc.id, _build_agent_message(reply_text))
     except Exception as exc:  # noqa: BLE001
