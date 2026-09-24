@@ -188,6 +188,16 @@ async def _chat(usar_mcp: bool):
             )
             continue
 
+        # --- Judge audit (input) --------------------------------------------
+        # Auditamos el prompt del usuario ANTES de invocar el grafo. Es
+        # advisory: si el verdict es "block" solo lo mostramos; seguimos
+        # llamando al LLM. Un fallo del judge nunca rompe la conversacion.
+        try:
+            verdict_in = await judge.send_message(texto)
+            ui.console.print(f"[dim]Judge (input)  → {verdict_in}[/dim]")
+        except Exception as exc:  # noqa: BLE001
+            ui.aviso(f"Judge no disponible (input): {exc}")
+
         turno += 1
         # Configuración con thread_id requerido por el checkpointer y etiquetas de LangSmith
         run_config = {
@@ -238,7 +248,7 @@ async def _chat(usar_mcp: bool):
             if final_ai_text:
                 try:
                     reply = await judge.send_message(final_ai_text)
-                    ui.console.print(f"[dim]Judge → {reply}[/dim]")
+                    ui.console.print(f"[dim]Judge (output) → {reply}[/dim]")
                 except Exception as exc:  # noqa: BLE001
                     ui.aviso(f"Judge no disponible: {exc}")
         except Exception as exc:  # noqa: BLE001
