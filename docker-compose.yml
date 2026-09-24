@@ -28,7 +28,24 @@ services:
       - "8080:8080"
     restart: unless-stopped
 
-  # 2. Agente del Grupo 47
+  # 2. Judge Agent (auditor del agente principal) — esqueleto inicial
+  judge:
+    build:
+      context: .
+      dockerfile: judge/Dockerfile
+    container_name: judge-grupo47
+    # Sin logs en la terminal para mantener limpio el chat.
+    attach: false
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # 3. Agente del Grupo 47
   agente:
     build: .
     image: saballesteros/agente-centroproyectos-misw44-grupo47-entrega:2026-20
@@ -40,12 +57,16 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
+      judge:
+        condition: service_healthy
     environment:
       # Configuración del modelo y Ollama en el Host
       - OLLAMA_MODEL=qwen2.5:3b
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       # Conexión interna a la API dentro del compose
       - API_BASE_URL=http://api:8080
+      # URL interna del judge agent (esqueleto, aun no consumido por el agente)
+      - JUDGE_BASE_URL=http://judge:8000
       - DATABASE_URL=postgresql://agente:agente@postgres:5432/agente?sslmode=disable
       - LANGGRAPH_STRICT_MSGPACK=true
       - CASO_NEGOCIO=centro_proyectos

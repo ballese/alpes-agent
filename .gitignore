@@ -9,3 +9,5 @@ checkpoints.sqlite
 *.sqlite3
 .langgraph_api/
 dev.md
+adaloom/
+.adaloom/
