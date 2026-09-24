@@ -30,6 +30,10 @@ services:
 
   # 2. Judge Agent (auditor del agente principal) — esqueleto inicial
   judge:
+    image: saballesteros/judge-centroproyectos-misw44-grupo47-entrega:2026-20
+    # Descargar siempre la imagen publicada en Docker Hub. Para probar cambios
+    # locales: `docker compose up --build`.
+    pull_policy: always
     build:
       context: .
       dockerfile: judge/Dockerfile
@@ -63,10 +67,11 @@ services:
 
   # 3. Agente del Grupo 47
   agente:
-    build: .
     image: saballesteros/agente-centroproyectos-misw44-grupo47-entrega:2026-20
-    # Construir siempre desde el codigo actual con `docker compose up` (sin --build).
-    pull_policy: build
+    # Descargar siempre la imagen publicada en Docker Hub. Para probar cambios
+    # locales: `docker compose up --build`.
+    pull_policy: always
+    build: .
     container_name: agente-grupo47
     depends_on:
       api:
