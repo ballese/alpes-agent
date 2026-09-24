@@ -24,6 +24,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from judge import rubric
+from judge.gate import pipeline as gate_pipeline
+from judge.gate.pipeline import UnknownToolError
 
 app = FastAPI(title="Judge Agent", version="0.2.0-demo")
 
@@ -69,6 +71,41 @@ class RubricRequest(BaseModel):
 def rubric_endpoint(req: RubricRequest) -> dict[str, Any]:
     """Aplica la rubrica al texto recibido y devuelve el verdict como JSON."""
     return rubric.evaluate(req.text)
+
+
+# ---------------------------------------------------------------------------
+# Endpoint CRV Gate (usado por el decorador @critical_write del agente)
+# ---------------------------------------------------------------------------
+
+
+class GateRequest(BaseModel):
+    """Payload del write-gate CRV.
+
+    ``tool`` debe ser una de las tools críticas de escritura registradas en
+    ``judge.gate.rules.CHECKERS``. ``args`` es el dict que el agente iba a
+    pasarle a la tool.
+    """
+
+    tool: str = Field(..., description="Nombre de la tool crítica.")
+    args: dict[str, Any] = Field(
+        default_factory=dict, description="Args originales que el agente construyó."
+    )
+
+
+@app.post("/gate")
+def gate_endpoint(req: GateRequest) -> JSONResponse:
+    """Ejecuta el pipeline CRV y devuelve la traza completa como JSON.
+
+    Códigos HTTP:
+        200 - status ``pass`` o ``refine-passed`` (payload utilizable).
+        200 - status ``block`` (payload con motivo, pero el agente decide qué hacer).
+        400 - tool desconocida (no está en el registry).
+    """
+    try:
+        result = gate_pipeline.run_gate(req.tool, req.args)
+    except UnknownToolError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+    return JSONResponse(status_code=200, content=result.as_dict())
 
 
 # ---------------------------------------------------------------------------

@@ -38,6 +38,12 @@ services:
     attach: false
     ports:
       - "8001:8000"
+    environment:
+      # Ollama en el host, para el LLM refine del CRV write-gate.
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL_REFINE=llama3.2:1b
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 5s
