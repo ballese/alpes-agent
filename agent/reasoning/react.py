@@ -38,6 +38,10 @@ from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
+from agent.memory.context import (
+    _truncar_tool_content,
+    trim_react_history,
+)
 from agent.tools import get_local_tools
 from cli.config import get_settings
 from observability.tracing import trazable
@@ -162,17 +166,27 @@ def build_reasoning_graph(
             )
             return {
                 "messages": [forzado],
-                "reasoning_trace": [f"[Paso {paso}] CIERRE FORZADO — tope de iteraciones"],
+                "reasoning_trace": [
+                    f"[Paso {paso}] CIERRE FORZADO — tope de iteraciones"
+                ],
                 "iterations": paso,
             }
 
-        contexto = [SystemMessage(content=SYSTEM_PROMPT_REACT)] + list(state["messages"])
+        # Item F: recorta la historia intra-turno cuando el presupuesto de
+        # caracteres se dispara — conservamos la petición original y la última
+        # ventana razonar/actuar; el bloque intermedio se reemplaza por una
+        # nota de omisión. Evita que un bucle con RAG largo llene la ventana.
+        contexto = [SystemMessage(content=SYSTEM_PROMPT_REACT)] + trim_react_history(
+            list(state["messages"]), paso
+        )
         respuesta = model.invoke(contexto)
 
         # El pensamiento vive en .content; las tool_calls (si las hay) en
         # .tool_calls y las detecta la arista condicional para enrutar a actuar.
         contenido = respuesta.content
-        pensamiento = (contenido if isinstance(contenido, str) else str(contenido)).strip()
+        pensamiento = (
+            contenido if isinstance(contenido, str) else str(contenido)
+        ).strip()
         entrada_traza = (
             f"[Paso {paso}] {pensamiento}"
             if pensamiento
@@ -213,7 +227,10 @@ def build_reasoning_graph(
 
             mensajes_tool.append(
                 ToolMessage(
-                    content=str(resultado),
+                    # Item A: recorta payloads grandes (leer_politicas,
+                    # buscar_convocatoria) antes de que entren al historial;
+                    # las respuestas cortas pasan intactas.
+                    content=_truncar_tool_content(str(resultado)),
                     name=llamada["name"],
                     tool_call_id=llamada["id"],
                 )
@@ -241,6 +258,8 @@ def build_reasoning_graph(
     grafo.add_conditional_edges(
         "razonar", _continuar, {"actuar": "actuar", "__end__": END}
     )
-    grafo.add_edge("actuar", "razonar")  # la observación alimenta el próximo pensamiento
+    grafo.add_edge(
+        "actuar", "razonar"
+    )  # la observación alimenta el próximo pensamiento
 
     return grafo.compile(checkpointer=checkpointer)

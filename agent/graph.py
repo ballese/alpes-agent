@@ -25,12 +25,38 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.store.base import BaseStore
 
+from agent.memory.context import (
+    CONTEXT_CHAR_BUDGET,
+    _chars_totales,
+    truncar_tool_messages,
+)
 from agent.memory.store import SINGLE_USER_ID, save_user_profile
 from cli.config import get_settings
 from observability.tracing import trazable
 
-# Umbral de compresión: al superar 6 mensajes se dispara el resumen progresivo
+# Umbral de compresión mínimo por número de mensajes. La compresión también se
+# dispara cuando el total de caracteres del historial supera CONTEXT_CHAR_BUDGET
+# (definido en agent/memory/context.py) — cualquiera de los dos criterios basta.
 COMPRESSION_THRESHOLD = 6
+
+# Mensajes triviales (respuestas cortas de continuidad) que NO deben gastar una
+# llamada extra al LLM en profile_updater. Se comparan en minúsculas.
+_MENSAJES_TRIVIALES = {
+    "sí",
+    "si",
+    "no",
+    "gracias",
+    "ok",
+    "okay",
+    "vale",
+    "continúa",
+    "continua",
+    "sigue",
+    "dale",
+    "listo",
+    "perfecto",
+    "claro",
+}
 
 
 class AgentState(TypedDict):
@@ -146,7 +172,10 @@ def _recordar_perfil_desde_tools(outputs: dict, store: BaseStore) -> None:
 
 def _asegurar_tool_sincrona(tool):
     """Permite que herramientas asíncronas (como las de FastMCP) se invoquen en ToolNode síncrono."""
-    if getattr(tool, "func", None) is None and getattr(tool, "coroutine", None) is not None:
+    if (
+        getattr(tool, "func", None) is None
+        and getattr(tool, "coroutine", None) is not None
+    ):
         coro = tool.coroutine
 
         def _sync_func(*args, **kwargs):
@@ -183,6 +212,13 @@ def profile_updater(state: AgentState, store: BaseStore) -> Dict[str, Any]:
         return {}
 
     last_msg = human_msgs[-1].content
+    # Gate C: si el último mensaje humano es trivial (asentimiento, "gracias",
+    # "sí", "continúa"…) o muy corto, no hay hechos nuevos que extraer y nos
+    # ahorramos una llamada al LLM extractor por turno.
+    texto_normalizado = last_msg.strip().lower() if isinstance(last_msg, str) else ""
+    if len(texto_normalizado) < 20 or texto_normalizado in _MENSAJES_TRIVIALES:
+        return {}
+
     recientes = state.get("messages", [])[-6:]
     contexto = "\n".join(
         f"{msg.__class__.__name__}: {getattr(msg, 'content', '')}"
@@ -225,7 +261,14 @@ def summarize_node(state: AgentState) -> Dict[str, Any]:
     messages = state.get("messages", [])
     existing_summary = state.get("summary", "")
 
-    to_summarize = messages[:-2]
+    # Item D: si la cola contiene un round-trip de tool (AIMessage con
+    # tool_calls seguido de ToolMessage), conserva 4 mensajes en vez de 2 para
+    # no dejar huérfanos (ToolMessage sin su AIMessage o viceversa) en el
+    # próximo turno.
+    tail = 2
+    if len(messages) >= 4 and isinstance(messages[-2], ToolMessage):
+        tail = 4
+    to_summarize = messages[:-tail]
     if not to_summarize:
         return {}
 
@@ -251,7 +294,9 @@ def summarize_node(state: AgentState) -> Dict[str, Any]:
         prompt = f"Resume concisamente la siguiente conversación sobre convocatorias:\n\n{convo_text}"
 
     new_summary = llm_summarizer.invoke([HumanMessage(content=prompt)])
-    remove_ops = [RemoveMessage(id=m.id) for m in to_summarize if getattr(m, "id", None)]
+    remove_ops = [
+        RemoveMessage(id=m.id) for m in to_summarize if getattr(m, "id", None)
+    ]
 
     return {"messages": remove_ops, "summary": new_summary.content}
 
@@ -266,8 +311,21 @@ def _debe_ejecutar_tools(state: AgentState) -> Literal["tools", "profile_updater
 
 
 def _should_compress(state: AgentState) -> Literal["summarize", "__end__"]:
-    """Evalúa si el historial de mensajes superó el umbral de compresión."""
-    if len(state.get("messages", [])) > COMPRESSION_THRESHOLD:
+    """Evalúa si el historial superó el presupuesto por conteo o por caracteres.
+
+    Item B: además del conteo de mensajes (COMPRESSION_THRESHOLD), disparamos
+    la compresión cuando la suma cruda de caracteres del historial excede
+    CONTEXT_CHAR_BUDGET. Un solo turno multi-tool (auth → perfil → convocatoria
+    → políticas) puede caber en pocos mensajes pero traer miles de caracteres
+    de RAG; con el criterio de bytes evitamos que ese peso arrastre al turno
+    siguiente.
+    """
+    messages = state.get("messages", [])
+    if len(messages) <= 2:
+        return "__end__"
+    if len(messages) > COMPRESSION_THRESHOLD:
+        return "summarize"
+    if _chars_totales(messages) > CONTEXT_CHAR_BUDGET:
         return "summarize"
     return "__end__"
 
@@ -321,7 +379,14 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
     )
     def ejecutar_tools(state: AgentState, store: BaseStore, config=None) -> dict:
         outputs = tool_node.invoke(state, config=config)
+        # Item A: recorta ToolMessages muy grandes antes de que entren al
+        # historial. Guardamos el perfil ANTES del recorte para no perder
+        # campos estructurados; la memoria de largo plazo se alimenta del
+        # objeto original.
         _recordar_perfil_desde_tools(outputs, store)
+        mensajes = outputs.get("messages", [])
+        if mensajes:
+            outputs = {**outputs, "messages": truncar_tool_messages(mensajes)}
         return outputs
 
     graph = StateGraph(AgentState)

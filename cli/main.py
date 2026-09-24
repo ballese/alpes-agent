@@ -184,8 +184,29 @@ async def _chat(usar_mcp: bool):
             continue
         if texto == "/ayuda":
             ui.console.print(
-                "[dim]/nueva reinicia la sesión (nuevo thread_id) · /salir termina[/dim]"
+                "[dim]/nueva reinicia la sesión (nuevo thread_id) · "
+                "/contexto muestra tamaño del historial · /salir termina[/dim]"
             )
+            continue
+        if texto == "/contexto":
+            # Diagnóstico de ventana de contexto (Item E). Lee el snapshot del
+            # checkpointer para el thread activo y muestra #mensajes, chars
+            # totales, si hay resumen comprimido y su longitud.
+            try:
+                snap = (
+                    graph.get_state({"configurable": {"thread_id": thread_id}}).values
+                    or {}
+                )
+                msgs = snap.get("messages", []) or []
+                summary = snap.get("summary", "") or ""
+                total = sum(len(str(getattr(m, "content", "")) or "") for m in msgs)
+                ui.console.print(
+                    f"[dim]Contexto → #msgs={len(msgs)}  chars={total}  "
+                    f"resumen={'sí' if summary else 'no'} "
+                    f"({len(summary)} c)[/dim]"
+                )
+            except Exception as exc:  # noqa: BLE001
+                ui.aviso(f"No se pudo leer el snapshot del grafo: {exc}")
             continue
 
         # --- Judge audit (input) --------------------------------------------
