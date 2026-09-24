@@ -111,6 +111,7 @@ def build_store():
 
     return _impl()"""
 
+
 def build_checkpointer():
     """Checkpointer de LangGraph con persistencia en disco (SqliteSaver)."""
     from agent.memory.checkpointer import build_checkpointer as _impl
@@ -136,3 +137,16 @@ def build_reasoning_graph():
     from agent.reasoning.react import build_reasoning_graph as _impl
 
     return _impl()
+
+
+# ── Semana Juez (segundo agente A2A) ────────────────────────────────────────
+def get_judge_app():
+    """ASGI app del servidor A2A del Juez (FastAPI).
+
+    Se usa desde CI con `httpx.ASGITransport(app=get_judge_app())` para no
+    depender de un `uvicorn` real. En producción/local se corre con
+    `python -m uvicorn judge.server:app` o vía `agente juez` en el CLI.
+    """
+    from judge.server import app
+
+    return app

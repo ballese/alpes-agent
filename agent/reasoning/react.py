@@ -38,6 +38,7 @@ from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
+from agent.judge_gate import judge_gate
 from agent.tools import get_local_tools
 from cli.config import get_settings
 from observability.tracing import trazable
@@ -96,6 +97,9 @@ class ReActState(TypedDict):
                      add_messages fusiona los mensajes nuevos con los previos).
     reasoning_trace: lista de "Pensamientos" y observaciones que cada nodo
                      añade — el artefacto ReAct, inspeccionable al terminar.
+    judge_trace:     veredictos del Juez por cada tool_call gateada. Mismo
+                     reducer aditivo que reasoning_trace, pero separado para
+                     que la UI pueda pintarlos en color distinto.
     iterations:      nº de pasos de razonamiento ya consumidos.
     max_iterations:  tope de seguridad; se puede sembrar desde el CLI y, si no,
                      cae al valor por defecto del grafo.
@@ -103,6 +107,7 @@ class ReActState(TypedDict):
 
     messages: Annotated[list[BaseMessage], add_messages]
     reasoning_trace: Annotated[list[str], operator.add]
+    judge_trace: Annotated[list[str], operator.add]
     iterations: int
     max_iterations: int
 
@@ -162,17 +167,23 @@ def build_reasoning_graph(
             )
             return {
                 "messages": [forzado],
-                "reasoning_trace": [f"[Paso {paso}] CIERRE FORZADO — tope de iteraciones"],
+                "reasoning_trace": [
+                    f"[Paso {paso}] CIERRE FORZADO — tope de iteraciones"
+                ],
                 "iterations": paso,
             }
 
-        contexto = [SystemMessage(content=SYSTEM_PROMPT_REACT)] + list(state["messages"])
+        contexto = [SystemMessage(content=SYSTEM_PROMPT_REACT)] + list(
+            state["messages"]
+        )
         respuesta = model.invoke(contexto)
 
         # El pensamiento vive en .content; las tool_calls (si las hay) en
         # .tool_calls y las detecta la arista condicional para enrutar a actuar.
         contenido = respuesta.content
-        pensamiento = (contenido if isinstance(contenido, str) else str(contenido)).strip()
+        pensamiento = (
+            contenido if isinstance(contenido, str) else str(contenido)
+        ).strip()
         entrada_traza = (
             f"[Paso {paso}] {pensamiento}"
             if pensamiento
@@ -224,23 +235,47 @@ def build_reasoning_graph(
 
         return {"messages": mensajes_tool, "reasoning_trace": observaciones}
 
-    def _continuar(state: ReActState) -> Literal["actuar", "__end__"]:
-        """Router de dos pasos: si el último AIMessage pidió herramientas, sigue
-        a `actuar`; si no, el modelo dio su respuesta final y el grafo termina.
+    def _continuar(state: ReActState) -> Literal["judge_gate", "__end__"]:
+        """Router de dos pasos: si el último AIMessage pidió herramientas, pasa
+        primero por el `judge_gate`; si no, el modelo dio su respuesta final y
+        el grafo termina.
         """
         ultimo = state["messages"][-1] if state.get("messages") else None
         if isinstance(ultimo, AIMessage) and ultimo.tool_calls:
-            return "actuar"
+            return "judge_gate"
         return "__end__"
+
+    def _post_judge(state: ReActState) -> Literal["actuar", "razonar"]:
+        """Después del Juez, ¿queda algo por ejecutar? Misma lógica que en
+        el grafo principal: si el Juez rechazó todas las tool_calls, ya hay
+        ToolMessages con las razones y volvemos a `razonar` para que el
+        modelo decida el siguiente paso.
+        """
+        messages = state.get("messages", [])
+        pending: set[str] = set()
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                pending = {tc["id"] for tc in msg.tool_calls}
+                break
+        for msg in messages:
+            if isinstance(msg, ToolMessage) and msg.tool_call_id in pending:
+                pending.discard(msg.tool_call_id)
+        return "actuar" if pending else "razonar"
 
     grafo = StateGraph(ReActState)
     grafo.add_node("razonar", razonar)
+    grafo.add_node("judge_gate", judge_gate)
     grafo.add_node("actuar", actuar)
 
     grafo.add_edge(START, "razonar")
     grafo.add_conditional_edges(
-        "razonar", _continuar, {"actuar": "actuar", "__end__": END}
+        "razonar", _continuar, {"judge_gate": "judge_gate", "__end__": END}
     )
-    grafo.add_edge("actuar", "razonar")  # la observación alimenta el próximo pensamiento
+    grafo.add_conditional_edges(
+        "judge_gate", _post_judge, {"actuar": "actuar", "razonar": "razonar"}
+    )
+    grafo.add_edge(
+        "actuar", "razonar"
+    )  # la observación alimenta el próximo pensamiento
 
     return grafo.compile(checkpointer=checkpointer)

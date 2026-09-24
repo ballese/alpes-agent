@@ -13,7 +13,7 @@ dynamic = ["dependencies"]
 agente = "cli.main:cli"
 
 [tool.setuptools]
-packages = ["cli", "agent", "agent.memory", "agent.reasoning", "mcp_server", "observability"]
+packages = ["cli", "agent", "agent.memory", "agent.reasoning", "judge", "mcp_server", "observability"]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
@@ -29,4 +29,5 @@ markers = [
     "semana3: observabilidad con LangSmith (requiere credenciales)",
     "semana4: memoria de corto y largo plazo",
     "semana5: descomposición de tareas (ReAct / Plan-and-Execute)",
+    "juez: segundo agente A2A con patrón critique-refine-validate",
 ]

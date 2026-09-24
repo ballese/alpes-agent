@@ -9,6 +9,7 @@ Segunda etapa: agente con memoria persistente de dos capas y compresión de cont
 import asyncio
 import concurrent.futures
 import json
+import operator
 from typing import Annotated, Any, Dict, List, Literal, TypedDict
 
 from langchain_core.messages import (
@@ -25,6 +26,7 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.store.base import BaseStore
 
+from agent.judge_gate import judge_gate
 from agent.memory.store import SINGLE_USER_ID, save_user_profile
 from cli.config import get_settings
 from observability.tracing import trazable
@@ -34,12 +36,13 @@ COMPRESSION_THRESHOLD = 6
 
 
 class AgentState(TypedDict):
-    """Estado compartido con mensajes, identidad de usuario, perfil y resumen."""
+    """Estado compartido con mensajes, identidad de usuario, perfil, resumen y traza del Juez."""
 
     messages: Annotated[List[BaseMessage], add_messages]
     user_id: str
     profile: str
     summary: str
+    judge_trace: Annotated[List[str], operator.add]
 
 
 SYSTEM_PROMPT_BASE = (
@@ -146,7 +149,10 @@ def _recordar_perfil_desde_tools(outputs: dict, store: BaseStore) -> None:
 
 def _asegurar_tool_sincrona(tool):
     """Permite que herramientas asíncronas (como las de FastMCP) se invoquen en ToolNode síncrono."""
-    if getattr(tool, "func", None) is None and getattr(tool, "coroutine", None) is not None:
+    if (
+        getattr(tool, "func", None) is None
+        and getattr(tool, "coroutine", None) is not None
+    ):
         coro = tool.coroutine
 
         def _sync_func(*args, **kwargs):
@@ -251,18 +257,46 @@ def summarize_node(state: AgentState) -> Dict[str, Any]:
         prompt = f"Resume concisamente la siguiente conversación sobre convocatorias:\n\n{convo_text}"
 
     new_summary = llm_summarizer.invoke([HumanMessage(content=prompt)])
-    remove_ops = [RemoveMessage(id=m.id) for m in to_summarize if getattr(m, "id", None)]
+    remove_ops = [
+        RemoveMessage(id=m.id) for m in to_summarize if getattr(m, "id", None)
+    ]
 
     return {"messages": remove_ops, "summary": new_summary.content}
 
 
 @trazable(name="nodo_decision", run_type="chain", tags=["langgraph"])
-def _debe_ejecutar_tools(state: AgentState) -> Literal["tools", "profile_updater"]:
-    """Determina si el modelo llamó a herramientas o si pasa a actualizar perfil."""
+def _debe_ejecutar_tools(state: AgentState) -> Literal["judge_gate", "profile_updater"]:
+    """Determina si el modelo llamó a herramientas o si pasa a actualizar perfil.
+
+    Nota: aunque haya tool_calls, no vamos directo a `tools`; primero pasa por
+    `judge_gate`, que puede aprobar, refinar o rechazar cada llamada.
+    """
     ultimo = state["messages"][-1] if state.get("messages") else None
     if isinstance(ultimo, AIMessage) and ultimo.tool_calls:
-        return "tools"
+        return "judge_gate"
     return "profile_updater"
+
+
+def _post_judge(state: AgentState) -> Literal["tools", "agente"]:
+    """Después del Juez, ¿queda algo por ejecutar?
+
+    Sí, si el último AIMessage con tool_calls tiene alguno cuyo id NO ha sido
+    respondido aún con un ToolMessage (i.e., el Juez no lo rechazó). Si el
+    Juez rechazó TODAS las llamadas, ya hay ToolMessages para todas y vamos
+    de vuelta a `agente` para que decida el siguiente paso.
+    """
+    messages = state.get("messages", [])
+    # Buscar el AIMessage con tool_calls más reciente.
+    pending: set[str] = set()
+    for msg in reversed(messages):
+        if isinstance(msg, AIMessage) and msg.tool_calls:
+            pending = {tc["id"] for tc in msg.tool_calls}
+            break
+    # Descontar los ids ya respondidos por ToolMessages posteriores.
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and msg.tool_call_id in pending:
+            pending.discard(msg.tool_call_id)
+    return "tools" if pending else "agente"
 
 
 def _should_compress(state: AgentState) -> Literal["summarize", "__end__"]:
@@ -327,6 +361,7 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
     graph = StateGraph(AgentState)
     graph.add_node("profile_loader", profile_loader)
     graph.add_node("agente", agente)
+    graph.add_node("judge_gate", judge_gate)
     graph.add_node("tools", ejecutar_tools)
     graph.add_node("profile_updater", profile_updater)
     graph.add_node("summarize", summarize_node)
@@ -337,7 +372,12 @@ def build_graph(tools: list | None = None, checkpointer=None, store=None):
     graph.add_conditional_edges(
         "agente",
         _debe_ejecutar_tools,
-        {"tools": "tools", "profile_updater": "profile_updater"},
+        {"judge_gate": "judge_gate", "profile_updater": "profile_updater"},
+    )
+    graph.add_conditional_edges(
+        "judge_gate",
+        _post_judge,
+        {"tools": "tools", "agente": "agente"},
     )
     graph.add_edge("tools", "agente")
 

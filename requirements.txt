@@ -36,6 +36,13 @@ prompt_toolkit==3.0.52
 python-dotenv==1.2.2
 httpx==0.28.1
 
+# ── Segundo agente (Juez) — servidor A2A ────────────────────────────────
+# FastAPI expone el JSON-RPC 2.0 del Juez; uvicorn lo sirve en local.
+# starlette lo trae fastapi como dependencia, pero lo fijamos para que
+# `httpx.ASGITransport` (usado en tests) también quede reproducible.
+fastapi==0.121.2
+uvicorn==0.38.0
+
 # ── Pruebas ─────────────────────────────────────────────────────────────
 pytest==9.1.1
 pytest-asyncio==1.4.0

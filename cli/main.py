@@ -42,7 +42,9 @@ def config():
     click.echo(f"Ollama URL       : {settings.ollama_base_url}")
     click.echo(f"API empresarial  : {settings.api_base_url}")
     click.echo(f"Base de memoria  : {settings.database_url}")
-    click.echo(f"RAG (conocimiento): {settings.rag_base_url} · colección {settings.rag_collection}")
+    click.echo(
+        f"RAG (conocimiento): {settings.rag_base_url} · colección {settings.rag_collection}"
+    )
     click.echo(f"caso de negocio  : {settings.caso_negocio}")
     click.echo(f"grupo            : {settings.grupo}")
     click.echo(f"LangSmith activo : {settings.langsmith_tracing}")
@@ -60,18 +62,24 @@ async def _reunir_tools(usar_mcp: bool) -> list:
     if usar_mcp:
         mcp_tools, error_mcp = await load_mcp_tools_safe()
         if error_mcp:
-            ui.aviso(f"Servidor MCP no disponible ({error_mcp}). Continuando solo con tools locales.")
+            ui.aviso(
+                f"Servidor MCP no disponible ({error_mcp}). Continuando solo con tools locales."
+            )
         tools = tools + mcp_tools
     return tools
 
 
 @cli.command()
-@click.option("--sin-mcp", is_flag=True, help="No conectar el servidor MCP (solo tools locales).")
+@click.option(
+    "--sin-mcp", is_flag=True, help="No conectar el servidor MCP (solo tools locales)."
+)
 def herramientas(sin_mcp: bool):
     """Lista las herramientas que el agente tiene disponibles."""
     tools = asyncio.run(_reunir_tools(usar_mcp=not sin_mcp))
     if not tools:
-        ui.aviso("Todavía no hay herramientas. Impleméntelas en la semana 2 (agent/tools.py y mcp_server/server.py).")
+        ui.aviso(
+            "Todavía no hay herramientas. Impleméntelas en la semana 2 (agent/tools.py y mcp_server/server.py)."
+        )
         return
     for tool in tools:
         descripcion = (tool.description or "").split("\n")[0]
@@ -93,19 +101,27 @@ def probar_tool(nombre: str, argumentos: str, sin_mcp: bool):
         tool = next((t for t in tools if t.name == nombre), None)
         if tool is None:
             disponibles = ", ".join(t.name for t in tools)
-            raise click.ClickException(f"Tool '{nombre}' no existe. Disponibles: {disponibles}")
+            raise click.ClickException(
+                f"Tool '{nombre}' no existe. Disponibles: {disponibles}"
+            )
         try:
             args = json.loads(argumentos)
         except json.JSONDecodeError as exc:
             raise click.ClickException(f"Argumentos inválidos (deben ser JSON): {exc}")
         resultado = await tool.ainvoke(args)
-        click.echo(resultado if isinstance(resultado, str) else json.dumps(resultado, indent=2, ensure_ascii=False))
+        click.echo(
+            resultado
+            if isinstance(resultado, str)
+            else json.dumps(resultado, indent=2, ensure_ascii=False)
+        )
 
     asyncio.run(_run())
 
 
 @cli.command()
-@click.option("--sin-mcp", is_flag=True, help="No conectar el servidor MCP (solo tools locales).")
+@click.option(
+    "--sin-mcp", is_flag=True, help="No conectar el servidor MCP (solo tools locales)."
+)
 def chat(sin_mcp: bool):
     """Conversación interactiva con el agente."""
     asyncio.run(_chat(usar_mcp=not sin_mcp))
@@ -156,10 +172,14 @@ async def _chat(usar_mcp: bool):
             session_id = str(uuid4())[:8]
             thread_id = f"centro-{session_id}"
             turno = 0
-            ui.aviso(f"Nueva sesión iniciada | Nuevo Thread ID: {thread_id} (Memoria de largo plazo conservada).")
+            ui.aviso(
+                f"Nueva sesión iniciada | Nuevo Thread ID: {thread_id} (Memoria de largo plazo conservada)."
+            )
             continue
         if texto == "/ayuda":
-            ui.console.print("[dim]/nueva reinicia la sesión (nuevo thread_id) · /salir termina[/dim]")
+            ui.console.print(
+                "[dim]/nueva reinicia la sesión (nuevo thread_id) · /salir termina[/dim]"
+            )
             continue
 
         turno += 1
@@ -190,6 +210,8 @@ async def _chat(usar_mcp: bool):
                 for salida_nodo in update.values():
                     if not isinstance(salida_nodo, dict):
                         continue
+                    for linea in salida_nodo.get("judge_trace", []) or []:
+                        ui.console.print(f"[bold yellow]⚖ {linea}[/bold yellow]")
                     for mensaje in salida_nodo.get("messages", []):
                         if isinstance(mensaje, AIMessage) and mensaje.tool_calls:
                             for llamada in mensaje.tool_calls:
@@ -210,9 +232,15 @@ async def _chat(usar_mcp: bool):
 
 @cli.command()
 @click.argument("mensaje")
-@click.option("--sin-mcp", is_flag=True, help="Solo tools locales (sin el servidor MCP).")
-@click.option("--max-iteraciones", default=8, show_default=True,
-              help="Red de seguridad del bucle ReAct (semana 5).")
+@click.option(
+    "--sin-mcp", is_flag=True, help="Solo tools locales (sin el servidor MCP)."
+)
+@click.option(
+    "--max-iteraciones",
+    default=8,
+    show_default=True,
+    help="Red de seguridad del bucle ReAct (semana 5).",
+)
 def razonar(mensaje: str, sin_mcp: bool, max_iteraciones: int):
     """Ejecuta el grafo ReAct de la semana 5 sobre un mensaje y muestra la traza razonar↔actuar.
 
@@ -222,7 +250,9 @@ def razonar(mensaje: str, sin_mcp: bool, max_iteraciones: int):
 
     Ejemplo: agente razonar "Mi cédula es 1020340003 y mi clave es 0003, muéstrame convocatorias para mi perfil"
     """
-    asyncio.run(_razonar(mensaje, usar_mcp=not sin_mcp, max_iteraciones=max_iteraciones))
+    asyncio.run(
+        _razonar(mensaje, usar_mcp=not sin_mcp, max_iteraciones=max_iteraciones)
+    )
 
 
 async def _razonar(mensaje: str, usar_mcp: bool, max_iteraciones: int):
@@ -238,6 +268,7 @@ async def _razonar(mensaje: str, usar_mcp: bool, max_iteraciones: int):
     entrada = {
         "messages": [HumanMessage(content=mensaje)],
         "reasoning_trace": [],
+        "judge_trace": [],
         "iterations": 0,
         "max_iterations": max_iteraciones,
     }
@@ -248,6 +279,7 @@ async def _razonar(mensaje: str, usar_mcp: bool, max_iteraciones: int):
 
     iteraciones = 0
     traza: list[str] = []
+    traza_juez: list[str] = []
     try:
         for update in grafo.stream(entrada, config=config, stream_mode="updates"):
             for _nodo, salida in update.items():
@@ -256,6 +288,10 @@ async def _razonar(mensaje: str, usar_mcp: bool, max_iteraciones: int):
                     iteraciones = salida["iterations"]
                 if salida.get("reasoning_trace"):
                     traza.extend(salida["reasoning_trace"])
+                if salida.get("judge_trace"):
+                    traza_juez.extend(salida["judge_trace"])
+                    for linea in salida["judge_trace"]:
+                        ui.console.print(f"[bold yellow]⚖ {linea}[/bold yellow]")
                 for msg in salida.get("messages", []):
                     if isinstance(msg, AIMessage) and msg.tool_calls:
                         for llamada in msg.tool_calls:
@@ -263,7 +299,11 @@ async def _razonar(mensaje: str, usar_mcp: bool, max_iteraciones: int):
                     elif isinstance(msg, ToolMessage):
                         ui.tool_resultado(msg.name, str(msg.content))
                     elif isinstance(msg, AIMessage) and msg.content:
-                        contenido = msg.content if isinstance(msg.content, str) else str(msg.content)
+                        contenido = (
+                            msg.content
+                            if isinstance(msg.content, str)
+                            else str(msg.content)
+                        )
                         if "Respuesta final" in contenido:
                             ui.respuesta_agente(contenido)
                         else:  # pensamiento intermedio del ciclo ReAct
@@ -280,7 +320,43 @@ async def _razonar(mensaje: str, usar_mcp: bool, max_iteraciones: int):
         ui.console.print("\n[dim]── Traza de razonamiento (ReAct) ──[/dim]")
         for linea in traza:
             ui.console.print(f"[dim]{linea}[/dim]")
+    if traza_juez:
+        ui.console.print("\n[dim]── Traza del Juez (A2A) ──[/dim]")
+        for linea in traza_juez:
+            ui.console.print(f"[dim]{linea}[/dim]")
     ui.aviso(f"Iteraciones ReAct: {iteraciones} / {max_iteraciones}")
+
+
+@cli.command()
+@click.option(
+    "--host",
+    default="0.0.0.0",
+    show_default=True,
+    help="Interfaz de red donde escuchar.",
+)
+@click.option(
+    "--port",
+    default=8090,
+    show_default=True,
+    help="Puerto TCP; debe coincidir con JUDGE_BASE_URL.",
+)
+def juez(host: str, port: int):
+    """Arranca el servidor A2A del Juez (FastAPI + JSON-RPC 2.0).
+
+    Corre en un proceso aparte del `chat`/`razonar` para respetar el aislamiento
+    del patrón A2A. La agent card queda expuesta en
+    http://<host>:<port>/.well-known/agent.json.
+    """
+    import uvicorn
+
+    from judge.server import app
+
+    settings = get_settings()
+    ui.aviso(
+        f"Juez escuchando en http://{host}:{port} · Ollama={settings.ollama_model} · "
+        f"Agent card en /.well-known/agent.json"
+    )
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":
