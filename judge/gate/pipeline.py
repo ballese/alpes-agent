@@ -29,6 +29,7 @@ from typing import Any
 from judge.gate import refine as refine_mod
 from judge.gate import rules
 from judge.gate.rules import Issue
+from observability.tracing import trazable
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class UnknownToolError(ValueError):
     """La tool solicitada no está registrada en ``rules.CHECKERS``."""
 
 
+@trazable(name="crv_gate.pipeline", run_type="chain", tags=["crv", "judge"])
 def run_gate(tool: str, args: dict[str, Any]) -> GateResult:
     """Ejecuta Crítica -> (Refine si hay fatales) -> Re-crítica.
 

@@ -36,6 +36,7 @@ import os
 from typing import Any, Callable
 
 from agent.guards.gate_client import call_gate
+from cli.ui import console as _console, design as _design
 
 _LOG = logging.getLogger("agent.guards.critical_write")
 
@@ -66,6 +67,45 @@ def _issues_summary(issues: list[dict[str, Any]]) -> str:
     return " | ".join(partes)
 
 
+def _print_gate(
+    tool_name: str,
+    status: str,
+    mode: str,
+    issues: list[dict[str, Any]] | None,
+) -> None:
+    """Imprime una línea dim en la CLI con el veredicto del write-gate.
+
+    Respeta ``display.show_tool_calls`` en ``cli_design.toml`` (si las llamadas
+    a tools están ocultas, esta línea también lo está). Envuelto en try/except
+    para que un fallo de la CLI nunca rompa el flujo del gate.
+
+    ``status`` acepta los valores devueltos por el pipeline CRV
+    (``pass`` | ``refine-passed`` | ``block``) más el pseudo-valor
+    ``unavailable`` para señalar fail-open.
+    """
+    try:
+        d = _design()
+        if not d["display"]["show_tool_calls"]:
+            return
+        color = d["colors"]["dim"]
+        if status == "pass":
+            body = "ok"
+        elif status == "refine-passed":
+            body = f"refinado ({_issues_summary(issues or [])})"
+        elif status == "block" and mode == "advisory":
+            body = f"warn ({_issues_summary(issues or [])})"
+        elif status == "block":
+            body = f"block ({_issues_summary(issues or [])})"
+        elif status == "unavailable":
+            body = "n/a (auditor no disponible)"
+        else:
+            body = status
+        _console.print(f"  [{color}][gate] {tool_name} → {body}[/{color}]")
+    except Exception:  # noqa: BLE001
+        # La CLI nunca debe romper la ejecución del gate.
+        pass
+
+
 def critical_write(
     tool_name: str,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
@@ -93,6 +133,7 @@ def critical_write(
                     "write-gate no disponible para '%s'; ejecutando con args originales",
                     tool_name,
                 )
+                _print_gate(tool_name, "unavailable", mode, None)
                 return func(**kwargs)
 
             status = gate.get("status")
@@ -101,9 +142,11 @@ def critical_write(
             issues_final = gate.get("issues_final", [])
 
             if status == "pass":
+                _print_gate(tool_name, "pass", mode, None)
                 return func(**args_final)
 
             if status == "refine-passed":
+                _print_gate(tool_name, "refine-passed", mode, issues_initial)
                 result = func(**args_final)
                 # Anotamos la reparación solo si el resultado es un dict serializable.
                 if isinstance(result, dict) and "error" not in result:
@@ -126,6 +169,9 @@ def critical_write(
                         tool_name,
                         _issues_summary(issues_final or issues_initial),
                     )
+                    _print_gate(
+                        tool_name, "block", mode, issues_final or issues_initial
+                    )
                     return {
                         "error": "blocked_by_gate",
                         "tool": tool_name,
@@ -140,6 +186,7 @@ def critical_write(
                     "write-gate BLOCK (advisory) para '%s': ejecutando de todos modos con originales",
                     tool_name,
                 )
+                _print_gate(tool_name, "block", mode, issues_final or issues_initial)
                 result = func(**kwargs)
                 if isinstance(result, dict) and "error" not in result:
                     result = {

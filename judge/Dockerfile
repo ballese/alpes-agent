@@ -13,8 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 COPY judge/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar solo el paquete judge para mantener la imagen pequena
+# Copiar el paquete judge y el módulo observability (usado por @trazable
+# para publicar spans CRV en LangSmith cuando la traza está activa).
 COPY judge/ ./judge/
+COPY observability/ ./observability/
 
 EXPOSE 8000
 

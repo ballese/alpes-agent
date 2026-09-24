@@ -14,6 +14,8 @@ from typing import Any
 
 import httpx
 
+from observability.tracing import trazable
+
 _LOG = logging.getLogger("agent.guards.gate_client")
 
 # Timeout total (conexión + lectura) para el /gate call. Debe ser mayor que el
@@ -26,6 +28,7 @@ def _judge_base_url() -> str:
     return os.getenv("JUDGE_BASE_URL", "http://judge:8000").rstrip("/")
 
 
+@trazable(name="crv_gate", run_type="chain", tags=["crv", "gate"])
 def call_gate(tool: str, args: dict[str, Any]) -> dict[str, Any] | None:
     """Invoca el pipeline CRV del judge para ``(tool, args)``.
 

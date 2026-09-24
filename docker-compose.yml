@@ -42,6 +42,14 @@ services:
       # Ollama en el host, para el LLM refine del CRV write-gate.
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL_REFINE=llama3.2:1b
+      # LangSmith: mismo proyecto que el agente para correlacionar spans CRV
+      # cliente (crv_gate) y servidor (crv_gate.pipeline / crv_gate.refine).
+      - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
+      - LANGSMITH_TRACING=${LANGCHAIN_TRACING_V2:-false}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGSMITH_API_KEY=${LANGCHAIN_API_KEY:-}
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-misw4412-grupo47}
+      - LANGSMITH_PROJECT=${LANGCHAIN_PROJECT:-misw4412-grupo47}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:

@@ -28,6 +28,7 @@ from typing import Any
 import httpx
 
 from judge.gate.rules import Issue
+from observability.tracing import trazable
 
 _LOG = logging.getLogger("judge.gate.refine")
 
@@ -112,6 +113,7 @@ def _extract_repaired_args(raw: str) -> dict[str, Any] | None:
     return None
 
 
+@trazable(name="crv_gate.refine", run_type="llm", tags=["crv", "judge", "refine"])
 def refine(tool: str, args: dict[str, Any], issues: list[Issue]) -> RefineResult:
     """Intenta reparar ``args`` con un LLM acotado. Fallback silencioso si algo falla.
 
