@@ -72,7 +72,7 @@ _R1 = RubricCheck(
             r"(instructions?|rules?|prompts?|directives?)\b"
         ),
         re.compile(
-            r"(?i)\b(olvida[rs]?)\b.{0,25}?\b"
+            r"(?i)\b(olvida[rs]?|ignora[rs]?)\b.{0,25}?\b"
             r"(instrucciones?|reglas?|indicaciones?)\b"
         ),
     ),
