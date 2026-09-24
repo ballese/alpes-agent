@@ -45,6 +45,9 @@ class Settings:
     rag_email: str
     rag_password: str
     rag_collection: str
+    # Judge Agent (auditor A2A). Dentro de compose se resuelve como
+    # http://judge:8000; en ejecucion local el default apunta al puerto expuesto.
+    judge_base_url: str
 
 
 @lru_cache
@@ -67,4 +70,5 @@ def get_settings() -> Settings:
         rag_email=os.getenv("RAG_EMAIL", ""),
         rag_password=os.getenv("RAG_PASSWORD", ""),
         rag_collection=os.getenv("RAG_COLLECTION", ""),
+        judge_base_url=os.getenv("JUDGE_BASE_URL", "http://localhost:8001"),
     )
