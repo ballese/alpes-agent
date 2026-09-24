@@ -2,15 +2,23 @@
 
 Servicio FastAPI que audita las acciones del agente principal.
 
-Este esqueleto expone dos superficies:
+Superficies expuestas:
 
-1. Endpoints legados (``/health``, ``/audit``) para pruebas manuales rapidas.
+1. Endpoints legados (``/health``, ``/audit``, ``/rubric``) para pruebas
+   manuales rapidas.
 2. Superficie **A2A** minima (``/.well-known/agent-card.json`` + JSON-RPC 2.0
-   en ``POST /``) que implementa unicamente el metodo ``message/send``.
+   en ``POST /``) que implementa el metodo ``message/send`` con **doble
+   proposito**:
 
-La logica de auditoria real se anadira mas adelante: por ahora la
-respuesta a ``message/send`` es siempre ``ok`` con un eco del texto recibido
-para facilitar depuracion.
+   - Si el TextPart entrante contiene un JSON con ``kind`` in
+     ``{"critique", "validate"}``, se enruta a ``judge.audit`` y se devuelve
+     la respuesta plana ``OK`` o ``REFINE: <razon>``.
+   - En cualquier otro caso, se enruta a ``judge.rubric.evaluate`` (auditoria
+     post-respuesta contra prompt injection) y se devuelve el verdict
+     serializado como JSON dentro de un TextPart.
+
+De esta forma el mismo endpoint sirve el write-gate (Agent 1 -> Agent 2) y la
+rubrica de salida sin abrir dos surfaces distintas.
 """
 
 from __future__ import annotations
@@ -23,11 +31,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from judge import rubric
-from judge.gate import pipeline as gate_pipeline
-from judge.gate.pipeline import UnknownToolError
+from judge import audit, rubric
 
-app = FastAPI(title="Judge Agent", version="0.2.0-demo")
+app = FastAPI(title="Judge Agent", version="0.3.0-a2a")
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +59,7 @@ def health() -> dict:
 
 
 @app.post("/audit", response_model=AuditResponse)
-def audit(req: AuditRequest) -> AuditResponse:
+def audit_legacy(req: AuditRequest) -> AuditResponse:
     """Endpoint legado. Se conserva para no romper smoke tests previos."""
     return AuditResponse(status="ok", received=req.message)
 
@@ -74,49 +80,18 @@ def rubric_endpoint(req: RubricRequest) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Endpoint CRV Gate (usado por el decorador @critical_write del agente)
-# ---------------------------------------------------------------------------
-
-
-class GateRequest(BaseModel):
-    """Payload del write-gate CRV.
-
-    ``tool`` debe ser una de las tools críticas de escritura registradas en
-    ``judge.gate.rules.CHECKERS``. ``args`` es el dict que el agente iba a
-    pasarle a la tool.
-    """
-
-    tool: str = Field(..., description="Nombre de la tool crítica.")
-    args: dict[str, Any] = Field(
-        default_factory=dict, description="Args originales que el agente construyó."
-    )
-
-
-@app.post("/gate")
-def gate_endpoint(req: GateRequest) -> JSONResponse:
-    """Ejecuta el pipeline CRV y devuelve la traza completa como JSON.
-
-    Códigos HTTP:
-        200 - status ``pass`` o ``refine-passed`` (payload utilizable).
-        200 - status ``block`` (payload con motivo, pero el agente decide qué hacer).
-        400 - tool desconocida (no está en el registry).
-    """
-    try:
-        result = gate_pipeline.run_gate(req.tool, req.args)
-    except UnknownToolError as exc:
-        return JSONResponse(status_code=400, content={"error": str(exc)})
-    return JSONResponse(status_code=200, content=result.as_dict())
-
-
-# ---------------------------------------------------------------------------
 # Superficie A2A: Agent Card + JSON-RPC 2.0
 # ---------------------------------------------------------------------------
 
 
 AGENT_CARD: dict[str, Any] = {
     "name": "JudgeAgent",
-    "description": "Auditor de acciones del agente del Centro de Proyectos y Consultoria.",
-    "version": "0.2.0-demo",
+    "description": (
+        "Auditor A2A del Centro de Proyectos: revisa acciones criticas del "
+        "agente principal (critique/validate por rubrica por tool) y aplica "
+        "la rubrica de prompt-injection sobre respuestas finales."
+    ),
+    "version": "0.3.0-a2a",
     # ``url`` es la URL del endpoint JSON-RPC segun la spec A2A.
     "url": "http://judge:8000/",
     "protocolVersion": "0.3.0",
@@ -125,14 +100,34 @@ AGENT_CARD: dict[str, Any] = {
     "defaultOutputModes": ["text/plain"],
     "skills": [
         {
-            "id": "audit",
-            "name": "audit",
+            "id": "critique",
+            "name": "critique",
             "description": (
-                "Recibe la respuesta final del agente principal y devuelve un "
-                "verdict JSON (pass/warn/block) segun la rubrica v0.2.0-demo."
+                "Revisa los args que el agente 1 quiere pasarle a una tool "
+                "critica contra la rubrica de esa tool. Responde 'OK' o "
+                "'REFINE: <razon>'."
+            ),
+            "tags": ["audit", "critique", "write-gate"],
+        },
+        {
+            "id": "validate",
+            "name": "validate",
+            "description": (
+                "Revisa los args refinados por el agente 1 tras un REFINE "
+                "previo. Responde 'OK' o 'REFINE: <razon>'."
+            ),
+            "tags": ["audit", "validate", "write-gate"],
+        },
+        {
+            "id": "rubric",
+            "name": "rubric",
+            "description": (
+                "Aplica la rubrica de prompt-injection y fuga de secretos al "
+                "texto final del agente. Devuelve un verdict JSON "
+                "(pass/warn/block)."
             ),
             "tags": ["audit", "rubric", "prompt-injection"],
-        }
+        },
     ],
 }
 
@@ -187,9 +182,29 @@ def _build_agent_message(text: str) -> dict[str, Any]:
     }
 
 
+def _try_parse_audit_payload(text: str) -> dict[str, Any] | None:
+    """Intenta interpretar el TextPart como payload de write-gate.
+
+    Devuelve el dict si tiene forma ``{"kind": "critique"|"validate", ...}``.
+    En cualquier otro caso devuelve ``None`` y el dispatcher enrutara a la
+    rubrica de prompt-injection.
+    """
+    if not text or not text.lstrip().startswith("{"):
+        return None
+    try:
+        obj = json.loads(text)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+    if obj.get("kind") not in ("critique", "validate"):
+        return None
+    return obj
+
+
 @app.post("/")
 async def jsonrpc_endpoint(request: Request) -> Any:
-    """Dispatcher JSON-RPC 2.0. Solo implementa ``message/send`` por ahora."""
+    """Dispatcher JSON-RPC 2.0. Enruta ``message/send`` a audit o rubrica."""
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -214,11 +229,21 @@ async def jsonrpc_endpoint(request: Request) -> Any:
 
     try:
         text_in = _extract_text(message)
-        # Aplica la rubrica al texto final del agente principal y devuelve el
-        # verdict serializado como JSON dentro de un TextPart. De esta forma el
-        # cliente A2A no necesita cambios: sigue recibiendo un string.
-        verdict = rubric.evaluate(text_in)
-        reply_text = json.dumps(verdict, ensure_ascii=False)
+        audit_payload = _try_parse_audit_payload(text_in)
+
+        if audit_payload is not None:
+            # Write-gate: critique o validate segun `kind`.
+            kind = audit_payload["kind"]
+            reply_text = (
+                audit.critique(audit_payload)
+                if kind == "critique"
+                else audit.validate(audit_payload)
+            )
+        else:
+            # Rubrica de prompt-injection sobre la respuesta final del agente.
+            verdict = rubric.evaluate(text_in)
+            reply_text = json.dumps(verdict, ensure_ascii=False)
+
         return _rpc_result(rpc.id, _build_agent_message(reply_text))
     except Exception as exc:  # noqa: BLE001
         return _rpc_error(rpc.id, -32603, f"Internal error: {exc}")
