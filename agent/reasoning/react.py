@@ -38,6 +38,7 @@ from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 
+from agent.guards.audit_context import set_user_profile
 from agent.memory.context import (
     _truncar_tool_content,
     trim_react_history,
@@ -45,6 +46,10 @@ from agent.memory.context import (
 from agent.tools import get_local_tools
 from cli.config import get_settings
 from observability.tracing import trazable
+
+# Nombres de tools cuyo resultado sirve como perfil del usuario autenticado.
+# Ese perfil viaja al juez en cada peticion de critique/validate.
+_PERFIL_TOOLS = frozenset({"consultar_mi_perfil_local", "consultar_mi_perfil"})
 
 # Red de seguridad: nº máximo de pasos de razonamiento antes de forzar el cierre.
 # Una petición completa (autenticar → perfil → convocatorias → políticas →
@@ -238,6 +243,15 @@ def build_reasoning_graph(
             observaciones.append(
                 f"  ↳ {llamada['name']}({llamada['args']}) → {resultado}"
             )
+
+            # Perfil del usuario autenticado → contexto de auditoria del juez.
+            # Solo si la tool fue de perfil y el resultado no trae 'error'.
+            if (
+                llamada["name"] in _PERFIL_TOOLS
+                and isinstance(resultado, dict)
+                and "error" not in resultado
+            ):
+                set_user_profile(resultado)
 
         return {"messages": mensajes_tool, "reasoning_trace": observaciones}
 

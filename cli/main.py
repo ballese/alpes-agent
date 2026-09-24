@@ -16,6 +16,7 @@ from importlib.metadata import PackageNotFoundError, version as pkg_version
 import click
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+from agent.guards.audit_context import set_user_request
 from cli import ui
 from cli.config import get_settings
 
@@ -240,6 +241,9 @@ async def _chat(usar_mcp: bool):
                 "user_id": user_id,
             }
             final_ai_text = ""
+            # Publica el mensaje del usuario en el ContextVar para que el
+            # write-gate (critical_write) pueda pasarselo al juez A2A.
+            set_user_request(texto)
             for update in graph.stream(
                 input_state, config=run_config, stream_mode="updates"
             ):
@@ -330,6 +334,8 @@ async def _razonar(mensaje: str, usar_mcp: bool, max_iteraciones: int):
 
     iteraciones = 0
     traza: list[str] = []
+    # Publica el mensaje del usuario para el write-gate A2A.
+    set_user_request(mensaje)
     try:
         for update in grafo.stream(entrada, config=config, stream_mode="updates"):
             for _nodo, salida in update.items():
