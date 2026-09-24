@@ -15,6 +15,7 @@ para facilitar depuracion.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -22,7 +23,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="Judge Agent", version="0.1.0")
+from judge import rubric
+
+app = FastAPI(title="Judge Agent", version="0.2.0-demo")
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +57,21 @@ def audit(req: AuditRequest) -> AuditResponse:
 
 
 # ---------------------------------------------------------------------------
+# Endpoint directo de rubrica (para curl y pruebas manuales)
+# ---------------------------------------------------------------------------
+
+
+class RubricRequest(BaseModel):
+    text: str = Field(..., description="Texto a evaluar contra la rubrica.")
+
+
+@app.post("/rubric")
+def rubric_endpoint(req: RubricRequest) -> dict[str, Any]:
+    """Aplica la rubrica al texto recibido y devuelve el verdict como JSON."""
+    return rubric.evaluate(req.text)
+
+
+# ---------------------------------------------------------------------------
 # Superficie A2A: Agent Card + JSON-RPC 2.0
 # ---------------------------------------------------------------------------
 
@@ -61,7 +79,7 @@ def audit(req: AuditRequest) -> AuditResponse:
 AGENT_CARD: dict[str, Any] = {
     "name": "JudgeAgent",
     "description": "Auditor de acciones del agente del Centro de Proyectos y Consultoria.",
-    "version": "0.1.0",
+    "version": "0.2.0-demo",
     # ``url`` es la URL del endpoint JSON-RPC segun la spec A2A.
     "url": "http://judge:8000/",
     "protocolVersion": "0.3.0",
@@ -72,8 +90,11 @@ AGENT_CARD: dict[str, Any] = {
         {
             "id": "audit",
             "name": "audit",
-            "description": "Recibe un mensaje del agente principal y responde ok.",
-            "tags": ["audit", "skeleton"],
+            "description": (
+                "Recibe la respuesta final del agente principal y devuelve un "
+                "verdict JSON (pass/warn/block) segun la rubrica v0.2.0-demo."
+            ),
+            "tags": ["audit", "rubric", "prompt-injection"],
         }
     ],
 }
@@ -156,11 +177,11 @@ async def jsonrpc_endpoint(request: Request) -> Any:
 
     try:
         text_in = _extract_text(message)
-        # TODO: aqui ira la logica real de auditoria (LLM-as-judge, reglas,
-        # LangSmith trace inspection, etc.). Por ahora el judge solo confirma
-        # que recibio el mensaje.
-        preview = (text_in[:80] + "...") if len(text_in) > 80 else text_in
-        reply_text = f"ok (received: {preview})" if preview else "ok"
+        # Aplica la rubrica al texto final del agente principal y devuelve el
+        # verdict serializado como JSON dentro de un TextPart. De esta forma el
+        # cliente A2A no necesita cambios: sigue recibiendo un string.
+        verdict = rubric.evaluate(text_in)
+        reply_text = json.dumps(verdict, ensure_ascii=False)
         return _rpc_result(rpc.id, _build_agent_message(reply_text))
     except Exception as exc:  # noqa: BLE001
         return _rpc_error(rpc.id, -32603, f"Internal error: {exc}")
