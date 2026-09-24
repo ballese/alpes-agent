@@ -18,6 +18,7 @@ necesiten (consultar_perfil_personal, consultar_historial_participaciones).
 import httpx
 from langchain_core.tools import tool
 
+from agent.guards.critical_write import critical_write
 from cli.config import get_settings
 from observability.tracing import trazable
 
@@ -65,6 +66,7 @@ def autenticarse_centro(numero_identificacion: str, clave: str) -> dict:
 
 
 @tool
+@critical_write("crear_solicitud")
 @trazable(name="crear_solicitud", run_type="tool", tags=["api-empresarial"])
 def crear_solicitud(
     convocatoria_id: str,
@@ -95,6 +97,7 @@ def crear_solicitud(
 
 
 @tool
+@critical_write("asignar_convocatoria")
 @trazable(name="asignar_convocatoria", run_type="tool", tags=["api-empresarial"])
 def asignar_convocatoria(
     convocatoria_id: str,
@@ -131,6 +134,7 @@ def asignar_convocatoria(
 
 
 @tool
+@critical_write("escalar")
 @trazable(name="escalar", run_type="tool", tags=["api-empresarial"])
 def escalar(
     convocatoria_id: str,
@@ -165,7 +169,9 @@ def escalar(
 
 
 @tool
-@trazable(name="consultar_mi_perfil_local", run_type="tool", tags=["local", "api-empresarial"])
+@trazable(
+    name="consultar_mi_perfil_local", run_type="tool", tags=["local", "api-empresarial"]
+)
 def consultar_mi_perfil_local(token: str) -> dict:
     """Equivalente local de la tool MCP consultar_mi_perfil para comparar latencia."""
     resp = httpx.get(

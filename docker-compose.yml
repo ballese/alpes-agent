@@ -73,6 +73,8 @@ services:
       - API_BASE_URL=http://api:8080
       # URL interna del judge agent (esqueleto, aun no consumido por el agente)
       - JUDGE_BASE_URL=http://judge:8000
+      # Modo del write-gate CRV: off | advisory | blocking. Default 'advisory'.
+      - JUDGE_GATE_MODE=advisory
       - DATABASE_URL=postgresql://agente:agente@postgres:5432/agente?sslmode=disable
       - LANGGRAPH_STRICT_MSGPACK=true
       - CASO_NEGOCIO=centro_proyectos
